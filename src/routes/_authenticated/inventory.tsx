@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Calculator, Scale, ArrowRightLeft } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
 
@@ -69,6 +69,14 @@ function InventoryPage() {
     totalGodownAsset += godownQty * cp;
     totalPotentialProfit += (shopQty + godownQty) * (sp - cp);
   });
+
+  function handleDeleteProduct(p: InventoryItem) {
+    if (window.confirm(`Are you sure you want to delete product "${p.name}"?`)) {
+      db.deleteInventoryItem(p.id);
+      qc.invalidateQueries({ queryKey: ["local-inventory-products"] });
+      toast.success(`Deleted "${p.name}" from inventory catalog.`);
+    }
+  }
 
   function exportCatalog() {
     const data = (products.data || []).map((p) => {
@@ -176,7 +184,7 @@ function InventoryPage() {
             className="w-full h-9 px-3 rounded-md bg-input border border-border text-sm font-mono text-foreground"
           />
         </div>
-        
+
         {/* Seamless No-Scroll Window Layout */}
         <div className="w-full overflow-hidden">
           <table className="w-full text-xs">
@@ -247,7 +255,7 @@ function InventoryPage() {
                       {qty(totalStock)} <span className="text-[10px] text-blue-300 font-normal">{unitLabel}</span>
                     </td>
 
-                    {/* Compact Fits-In-Window Action Buttons */}
+                    {/* Compact Fits-In-Window Action Buttons with Delete Option */}
                     <td className="px-2.5 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
@@ -270,6 +278,13 @@ function InventoryPage() {
                           className="h-7 w-7 rounded bg-secondary hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground border border-border transition shrink-0"
                         >
                           <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProduct(p)}
+                          title="Delete Product"
+                          className="h-7 w-7 rounded bg-destructive/15 hover:bg-destructive/30 inline-flex items-center justify-center text-destructive border border-destructive/30 transition shrink-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>
@@ -453,14 +468,6 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
     image_path: product?.image_path ?? "",
   });
 
-  const [totalBatchCost, setTotalBatchCost] = useState<string>("");
-
-  // Weight (Kg) to Pieces (Pcs) Conversion State
-  const [showWeightConverter, setShowWeightConverter] = useState(false);
-  const [bulkKgQty, setBulkKgQty] = useState<string>("");
-  const [pcsPerKgRatio, setPcsPerKgRatio] = useState<string>("");
-  const [bulkTotalCost, setBulkTotalCost] = useState<string>("");
-
   const shopQtyNum = Number(f.stock_qty || 0);
   const godownQtyNum = Number(f.godown_qty || 0);
   const totalStockNum = shopQtyNum + godownQtyNum;
@@ -468,45 +475,6 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
   const cpNum = Number(f.cost_price || 0);
   const spNum = Number(f.selling_price || 0);
   const totalInventoryValuation = totalStockNum * cpNum;
-
-  function handleTotalBatchCostChange(val: string) {
-    setTotalBatchCost(val);
-    const parsedBatch = parseFloat(val);
-    if (!isNaN(parsedBatch) && parsedBatch > 0 && totalStockNum > 0) {
-      const calculatedUnitCost = Number((parsedBatch / totalStockNum).toFixed(2));
-      setF((prev) => ({ ...prev, cost_price: calculatedUnitCost }));
-    }
-  }
-
-  function applyKgToPcsConversion() {
-    const kg = parseFloat(bulkKgQty);
-    const ratio = parseFloat(pcsPerKgRatio);
-    const cost = parseFloat(bulkTotalCost);
-
-    if (isNaN(kg) || kg <= 0) { toast.error("Enter valid Kg weight bought"); return; }
-    if (isNaN(ratio) || ratio <= 0) { toast.error("Enter valid Pcs per Kg conversion ratio"); return; }
-
-    const calculatedTotalPcs = Math.round(kg * ratio);
-    let calculatedCostPerPc = 0;
-    if (!isNaN(cost) && cost > 0 && calculatedTotalPcs > 0) {
-      calculatedCostPerPc = Number((cost / calculatedTotalPcs).toFixed(2));
-    }
-
-    setF((prev) => ({
-      ...prev,
-      unit: "Piece (Pcs)",
-      stock_qty: calculatedTotalPcs,
-      godown_qty: 0,
-      cost_price: calculatedCostPerPc || prev.cost_price,
-    }));
-
-    if (calculatedCostPerPc > 0) {
-      setTotalBatchCost(cost.toString());
-    }
-
-    toast.success(`Converted ${kg} Kg -> ${calculatedTotalPcs} Pcs (${ratio} Pcs/Kg) at ${inr(calculatedCostPerPc)} per Pc!`);
-    setShowWeightConverter(false);
-  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -546,7 +514,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl card-surface p-6 border-l-4 border-l-primary space-y-4 max-h-[90vh] overflow-auto">
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xl card-surface p-6 border-l-4 border-l-primary space-y-4 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center pb-2 border-b border-border">
           <div className="text-base font-bold text-foreground">{product ? "Edit Inventory Product" : "New Inventory Product Entry"}</div>
           <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
@@ -561,7 +529,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                   required
                   value={f.name}
                   onChange={(e) => setF({ ...f, name: e.target.value })}
-                  placeholder="e.g. Steel plates (Bought in Kgs / Stored in Pcs)"
+                  placeholder="e.g. Steel plates / Copper wire"
                   className={ic}
                   autoFocus
                 />
@@ -604,11 +572,11 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               </label>
             </div>
 
-            {/* Measurement Unit Choice */}
+            {/* Measurement Unit Choice (Kg, Pcs, Ltr, Mtr, etc.) */}
             <div>
               <label className="block">
                 <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex items-center gap-1">
-                  <Scale className="h-3 w-3 text-primary" /> Inventory Unit (For Stock & Billing)
+                  <Scale className="h-3 w-3 text-primary" /> Measurement Unit (Kg / Pcs)
                 </div>
                 <select
                   value={f.unit || "Piece (Pcs)"}
@@ -635,96 +603,23 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
             </div>
           </div>
 
-          {/* Bulk Weight (Kg) to Pieces (Pcs) Conversion Tool Banner */}
-          <div className="p-3 bg-card rounded border border-border space-y-2">
-            <div className="flex justify-between items-center">
-              <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <ArrowRightLeft className="h-4 w-4 text-emerald-400" /> Bought in Kgs? Convert Weight to Pieces (Pcs)
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowWeightConverter(!showWeightConverter)}
-                className="text-xs text-primary font-bold hover:underline"
-              >
-                {showWeightConverter ? "Hide Converter" : "+ Open Bulk Weight (Kg -> Pcs) Calculator"}
-              </button>
-            </div>
-
-            {showWeightConverter && (
-              <div className="p-3 bg-secondary/50 border border-primary/30 rounded space-y-3 pt-2">
-                <div className="text-[11px] text-muted-foreground">
-                  Specify total weight bought in Kilograms (Kg), conversion ratio (e.g. 2 Pcs per Kg), and batch cost:
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block">
-                      <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Bulk Weight (Kg)</div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={bulkKgQty}
-                        onChange={(e) => setBulkKgQty(e.target.value)}
-                        placeholder="e.g. 50 Kg"
-                        className={ic}
-                      />
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block">
-                      <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Pcs per Kg Ratio</div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={pcsPerKgRatio}
-                        onChange={(e) => setPcsPerKgRatio(e.target.value)}
-                        placeholder="e.g. 2 Pcs/Kg"
-                        className={ic}
-                      />
-                    </label>
-                  </div>
-                  <div>
-                    <label className="block">
-                      <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Total Batch Cost (₹)</div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={bulkTotalCost}
-                        onChange={(e) => setBulkTotalCost(e.target.value)}
-                        placeholder="e.g. 5000"
-                        className={ic}
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={applyKgToPcsConversion}
-                  className="w-full h-8 rounded bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition"
-                >
-                  Apply Conversion (Update Stock to Pieces & Unit Cost)
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Stock Qty Section: Shop vs Godown */}
+          {/* Direct Stock Qty / Weight Section */}
           <div className="p-3 bg-card rounded border border-border space-y-2">
             <div className="text-xs font-bold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Allocation & Quantities</span>
-              <span className="text-xs font-mono font-bold text-blue-400">Total Stock: {qty(totalStockNum)} {f.unit || 'Piece (Pcs)'}</span>
+              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Quantities / Weight ({f.unit || 'Pcs'})</span>
+              <span className="text-xs font-mono font-bold text-blue-400">Total Stock: {qty(totalStockNum)} {f.unit || 'Pcs'}</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty (Billable)</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty / Weight ({f.unit || 'Pcs'})</div>
                   <input
                     type="number"
                     step="0.01"
                     value={f.stock_qty ?? ""}
                     onChange={(e) => setF({ ...f, stock_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                    placeholder="0"
+                    placeholder="e.g. 28 (Pcs or Kg)"
                     className={ic}
                   />
                 </label>
@@ -732,13 +627,13 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty (Requires Transfer)</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty / Weight ({f.unit || 'Pcs'})</div>
                   <input
                     type="number"
                     step="0.01"
                     value={f.godown_qty ?? ""}
                     onChange={(e) => setF({ ...f, godown_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                    placeholder="0"
+                    placeholder="e.g. 0 (Pcs or Kg)"
                     className={ic}
                   />
                 </label>
@@ -746,35 +641,17 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
             </div>
           </div>
 
-          {/* Pricing & Cost Auto-Calculation (Fixed 3-column equal grid alignment) */}
+          {/* Pricing Section (Clean & Direct) */}
           <div className="p-3 bg-card rounded border border-border space-y-2">
             <div className="text-xs font-bold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-1.5"><Calculator className="h-3.5 w-3.5 text-emerald-400" /> Pricing & Cost Auto-Calculation</span>
+              <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5 text-emerald-400" /> Unit Pricing ({f.unit || 'Pcs'})</span>
               <span className="text-xs font-mono text-emerald-400">Total Valuation: {inr(totalInventoryValuation)}</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 items-end">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 truncate whitespace-nowrap">
-                    Total Batch Cost (₹)
-                  </div>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={totalBatchCost}
-                    onChange={(e) => handleTotalBatchCostChange(e.target.value)}
-                    placeholder="e.g. 5000"
-                    className={ic}
-                  />
-                </label>
-              </div>
-
-              <div>
-                <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 truncate whitespace-nowrap">
-                    Cost / Unit (₹)
-                  </div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Price per {f.unit || 'Unit'} (₹)</div>
                   <input
                     type="number"
                     step="0.01"
@@ -788,9 +665,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 truncate whitespace-nowrap">
-                    Selling / Unit (₹) *
-                  </div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Selling Price per {f.unit || 'Unit'} (₹) *</div>
                   <input
                     required
                     type="number"

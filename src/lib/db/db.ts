@@ -346,6 +346,13 @@ class OfflineDB {
     this.saveToStorage(data);
   }
 
+  public deleteInventoryItem(id: string): boolean {
+    const data = { ...this.memoryData };
+    data.inventory = data.inventory.filter((p) => p.id !== id);
+    this.saveToStorage(data);
+    return true;
+  }
+
   public bulkImportInventory(items: Partial<InventoryItem>[]): { success: boolean; count: number; errors: string[] } {
     const data = { ...this.memoryData };
     const errors: string[] = [];
