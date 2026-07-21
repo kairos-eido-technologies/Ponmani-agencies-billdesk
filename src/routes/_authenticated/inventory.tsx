@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2 } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2, Calculator } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
 
@@ -84,6 +84,9 @@ function InventoryPage() {
       const margin = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
       const totalStock = (p.stock_qty || 0) + (p.godown_qty || 0);
       const totalCost = totalStock * p.cost_price;
+      const totalSellingVal = totalStock * p.selling_price;
+      const totalProfitVal = totalSellingVal - totalCost;
+
       return {
         Barcode: p.barcode,
         Name: p.name,
@@ -96,7 +99,9 @@ function InventoryPage() {
         'Shop Stock': p.stock_qty,
         'Godown Stock': p.godown_qty,
         'Total Stock': totalStock,
-        'Total Inventory Valuation (₹)': totalCost,
+        'Total Stock Cost (₹)': totalCost,
+        'Total Stock Selling Value (₹)': totalSellingVal,
+        'Total Stock Potential Profit (₹)': totalProfitVal,
         'MOQ Alert': p.moq,
         'Min Stock Alert': p.min_stock_alert,
         'SKU Code': p.sku_code || p.barcode,
@@ -355,14 +360,17 @@ function ProductPnlModal({ product, invoices, onClose }: { product: InventoryIte
   const unitPnl = product.selling_price - product.cost_price;
   const marginPct = product.selling_price > 0 ? (unitPnl / product.selling_price) * 100 : 0;
 
-  const totalCatalogCost = totalStock * product.cost_price;
+  const totalStockCostValuation = totalStock * product.cost_price;
+  const totalStockSellingValuation = totalStock * product.selling_price;
+  const totalStockPotentialProfit = totalStockSellingValuation - totalStockCostValuation;
+
   const totalCogs = unitsSold * product.cost_price;
   const netRealizedProfit = totalRevenue - totalCogs;
   const isProfitable = netRealizedProfit >= 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-emerald-500 space-y-4">
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-emerald-500 space-y-4 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center pb-2 border-b border-border">
           <div className="text-base font-bold text-foreground flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-emerald-400" /> Full Product Stock P&L Analysis
@@ -398,23 +406,29 @@ function ProductPnlModal({ product, invoices, onClose }: { product: InventoryIte
         {/* Unit & Total Stock Financial Matrix */}
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Cost Price / Unit</div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Cost (CP)</div>
             <div className="text-sm font-bold font-mono text-foreground">{inr(product.cost_price)}</div>
           </div>
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Selling Price / Unit</div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Selling (SP)</div>
             <div className="text-sm font-bold font-mono text-primary">{inr(product.selling_price)}</div>
           </div>
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Profit / Margin</div>
-            <div className={`text-sm font-bold font-mono ${unitPnl >= 0 ? "text-emerald-400" : "text-destructive"}`}>
-              {unitPnl >= 0 ? `+${inr(unitPnl)}` : inr(unitPnl)} ({marginPct.toFixed(1)}%)
-            </div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Cost (CP Total)</div>
+            <div className="text-sm font-bold font-mono text-foreground">{inr(totalStockCostValuation)}</div>
           </div>
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Valuation</div>
-            <div className="text-sm font-bold font-mono text-foreground">{inr(totalCatalogCost)}</div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Selling (SP Total)</div>
+            <div className="text-sm font-bold font-mono text-primary">{inr(totalStockSellingValuation)}</div>
           </div>
+        </div>
+
+        {/* Total Projected Stock P&L */}
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded flex justify-between items-center text-xs font-mono">
+          <span className="font-bold text-emerald-400">Total Projected Stock Margin (If All Sold):</span>
+          <span className={`font-bold text-base ${totalStockPotentialProfit >= 0 ? "text-emerald-400" : "text-destructive"}`}>
+            {totalStockPotentialProfit >= 0 ? `+${inr(totalStockPotentialProfit)}` : inr(totalStockPotentialProfit)} ({marginPct.toFixed(1)}%)
+          </span>
         </div>
 
         {/* Realized Sales Financials */}
@@ -474,7 +488,72 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
   const cpNum = Number(f.cost_price || 0);
   const spNum = Number(f.selling_price || 0);
-  const totalInventoryValuation = totalStockNum * cpNum;
+
+  // Total Stock Cost & Selling Amounts State for 2-Way Sync
+  const [totalCostAmount, setTotalCostAmount] = useState<string>(
+    product?.cost_price && totalStockNum > 0 ? (product.cost_price * totalStockNum).toString() : ""
+  );
+
+  const [totalSellingAmount, setTotalSellingAmount] = useState<string>(
+    product?.selling_price && totalStockNum > 0 ? (product.selling_price * totalStockNum).toString() : ""
+  );
+
+  // 2-Way Auto-Calculations
+  function handleCostPriceChange(val: string) {
+    const cp = val === "" ? undefined : parseFloat(val);
+    setF((prev) => ({ ...prev, cost_price: cp }));
+    if (cp !== undefined && totalStockNum > 0) {
+      setTotalCostAmount((cp * totalStockNum).toString());
+    } else if (val === "") {
+      setTotalCostAmount("");
+    }
+  }
+
+  function handleTotalCostAmountChange(val: string) {
+    setTotalCostAmount(val);
+    const parsedTotal = parseFloat(val);
+    if (!isNaN(parsedTotal) && parsedTotal >= 0 && totalStockNum > 0) {
+      const calculatedUnitCost = Number((parsedTotal / totalStockNum).toFixed(2));
+      setF((prev) => ({ ...prev, cost_price: calculatedUnitCost }));
+    } else if (val === "") {
+      setF((prev) => ({ ...prev, cost_price: undefined }));
+    }
+  }
+
+  function handleSellingPriceChange(val: string) {
+    const sp = val === "" ? undefined : parseFloat(val);
+    setF((prev) => ({ ...prev, selling_price: sp }));
+    if (sp !== undefined && totalStockNum > 0) {
+      setTotalSellingAmount((sp * totalStockNum).toString());
+    } else if (val === "") {
+      setTotalSellingAmount("");
+    }
+  }
+
+  function handleTotalSellingAmountChange(val: string) {
+    setTotalSellingAmount(val);
+    const parsedTotal = parseFloat(val);
+    if (!isNaN(parsedTotal) && parsedTotal >= 0 && totalStockNum > 0) {
+      const calculatedUnitSelling = Number((parsedTotal / totalStockNum).toFixed(2));
+      setF((prev) => ({ ...prev, selling_price: calculatedUnitSelling }));
+    } else if (val === "") {
+      setF((prev) => ({ ...prev, selling_price: undefined }));
+    }
+  }
+
+  // Handle Qty change auto-updates Total Amounts
+  function handleStockQtyChange(shopQtyVal?: number, godownQtyVal?: number) {
+    const sq = shopQtyVal !== undefined ? shopQtyVal : shopQtyNum;
+    const gq = godownQtyVal !== undefined ? godownQtyVal : godownQtyNum;
+    const tot = sq + gq;
+
+    if (f.cost_price !== undefined && tot > 0) {
+      setTotalCostAmount((f.cost_price * tot).toString());
+    }
+    if (f.selling_price !== undefined && tot > 0) {
+      setTotalSellingAmount((f.selling_price * tot).toString());
+    }
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -603,22 +682,26 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
             </div>
           </div>
 
-          {/* Direct Stock Qty / Weight Section */}
+          {/* Stock Allocation & Quantities Section */}
           <div className="p-3 bg-card rounded border border-border space-y-2">
             <div className="text-xs font-bold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Quantities / Weight ({f.unit || 'Pcs'})</span>
+              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Allocation & Quantities ({f.unit || 'Pcs'})</span>
               <span className="text-xs font-mono font-bold text-blue-400">Total Stock: {qty(totalStockNum)} {f.unit || 'Pcs'}</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty / Weight ({f.unit || 'Pcs'})</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty ({f.unit || 'Pcs'})</div>
                   <input
                     type="number"
                     step="0.01"
                     value={f.stock_qty ?? ""}
-                    onChange={(e) => setF({ ...f, stock_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    onChange={(e) => {
+                      const sq = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                      setF({ ...f, stock_qty: sq });
+                      handleStockQtyChange(sq, godownQtyNum);
+                    }}
                     placeholder="e.g. 28 (Pcs or Kg)"
                     className={ic}
                   />
@@ -627,12 +710,16 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty / Weight ({f.unit || 'Pcs'})</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty ({f.unit || 'Pcs'})</div>
                   <input
                     type="number"
                     step="0.01"
                     value={f.godown_qty ?? ""}
-                    onChange={(e) => setF({ ...f, godown_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    onChange={(e) => {
+                      const gq = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                      setF({ ...f, godown_qty: gq });
+                      handleStockQtyChange(shopQtyNum, gq);
+                    }}
                     placeholder="e.g. 0 (Pcs or Kg)"
                     className={ic}
                   />
@@ -641,14 +728,15 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
             </div>
           </div>
 
-          {/* Pricing Section (Clean & Direct) */}
+          {/* Unit & Total Pricing Matrix (Bi-directional Auto Sync) */}
           <div className="p-3 bg-card rounded border border-border space-y-2">
             <div className="text-xs font-bold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5 text-emerald-400" /> Unit Pricing ({f.unit || 'Pcs'})</span>
-              <span className="text-xs font-mono text-emerald-400">Total Valuation: {inr(totalInventoryValuation)}</span>
+              <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5 text-emerald-400" /> Unit & Total Stock Pricing (Bi-directional Sync)</span>
+              <span className="text-xs font-mono text-emerald-400">Total Cost: {inr(totalStockNum * cpNum)}</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
+              {/* Cost Inputs */}
               <div>
                 <label className="block">
                   <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Price per {f.unit || 'Unit'} (₹)</div>
@@ -656,7 +744,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                     type="number"
                     step="0.01"
                     value={f.cost_price ?? ""}
-                    onChange={(e) => setF({ ...f, cost_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    onChange={(e) => handleCostPriceChange(e.target.value)}
                     placeholder="0.00"
                     className={ic}
                   />
@@ -665,14 +753,43 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
               <div>
                 <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total Stock Cost Amount (₹)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={totalCostAmount}
+                    onChange={(e) => handleTotalCostAmountChange(e.target.value)}
+                    placeholder="e.g. 2900 (Auto-syncs Cost/Unit)"
+                    className={ic}
+                  />
+                </label>
+              </div>
+
+              {/* Selling Inputs */}
+              <div>
+                <label className="block">
                   <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Selling Price per {f.unit || 'Unit'} (₹) *</div>
                   <input
                     required
                     type="number"
                     step="0.01"
                     value={f.selling_price ?? ""}
-                    onChange={(e) => setF({ ...f, selling_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    onChange={(e) => handleSellingPriceChange(e.target.value)}
                     placeholder="0.00"
+                    className={ic}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total Stock Selling Amount (₹)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={totalSellingAmount}
+                    onChange={(e) => handleTotalSellingAmountChange(e.target.value)}
+                    placeholder="e.g. 3480 (Auto-syncs Selling/Unit)"
                     className={ic}
                   />
                 </label>
