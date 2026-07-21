@@ -6,9 +6,23 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Calculator, Scale } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
+
+const UNIT_OPTIONS = [
+  "Piece (Pcs)",
+  "Kilogram (Kg)",
+  "Gram (g)",
+  "Litre (Ltr)",
+  "Millilitre (ml)",
+  "Meter (Mtr)",
+  "Box",
+  "Set",
+  "Bundle",
+  "Packet",
+  "Ton",
+];
 
 function InventoryPage() {
   const qc = useQueryClient();
@@ -39,21 +53,42 @@ function InventoryPage() {
     queryFn: async () => db.getInvoices(),
   });
 
+  // Calculate Overall Inventory Metrics
+  const allProds = products.data || [];
+  let totalShopAsset = 0;
+  let totalGodownAsset = 0;
+  let totalPotentialProfit = 0;
+
+  allProds.forEach((p) => {
+    const cp = Number(p.cost_price || 0);
+    const sp = Number(p.selling_price || 0);
+    const shopQty = Number(p.stock_qty || 0);
+    const godownQty = Number(p.godown_qty || 0);
+
+    totalShopAsset += shopQty * cp;
+    totalGodownAsset += godownQty * cp;
+    totalPotentialProfit += (shopQty + godownQty) * (sp - cp);
+  });
+
   function exportCatalog() {
     const data = (products.data || []).map((p) => {
       const unitPnl = p.selling_price - p.cost_price;
       const margin = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
+      const totalStock = (p.stock_qty || 0) + (p.godown_qty || 0);
+      const totalCost = totalStock * p.cost_price;
       return {
         Barcode: p.barcode,
         Name: p.name,
         Category: p.category,
-        Unit: p.unit,
+        Unit: p.unit || 'Pcs',
         'Cost Price (₹)': p.cost_price,
         'Selling Price (₹)': p.selling_price,
         'Unit Profit/Loss (₹)': unitPnl,
         'Margin (%)': Math.round(margin),
         'Shop Stock': p.stock_qty,
         'Godown Stock': p.godown_qty,
+        'Total Stock': totalStock,
+        'Total Inventory Valuation (₹)': totalCost,
         'MOQ Alert': p.moq,
         'Min Stock Alert': p.min_stock_alert,
         'SKU Code': p.sku_code || p.barcode,
@@ -67,13 +102,13 @@ function InventoryPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Inventory & Stock Catalog with P&L Analysis"
-        subtitle={`${products.data?.length ?? 0} active products in local database with per-product profit tracking`}
+        title="Inventory & Stock Catalog"
+        subtitle={`${products.data?.length ?? 0} active products in local database with per-product P&L tracking`}
         action={
           <div className="flex gap-2">
             <button
               onClick={() => ExcelEngine.downloadTemplate('products')}
-              className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
+              className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition text-foreground"
             >
               <Download className="h-3.5 w-3.5" /> Template
             </button>
@@ -85,7 +120,7 @@ function InventoryPage() {
             </button>
             <button
               onClick={exportCatalog}
-              className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
+              className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition text-foreground"
             >
               <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> Export Excel
             </button>
@@ -99,13 +134,46 @@ function InventoryPage() {
         }
       />
 
+      {/* KPI Overview Bar */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="card-surface p-3 border-l-4 border-l-primary flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+              <Store className="h-3.5 w-3.5 text-primary" /> Shop Stock Valuation
+            </div>
+            <div className="text-base font-bold font-mono text-foreground mt-0.5">{inr(totalShopAsset)}</div>
+          </div>
+          <div className="text-[10px] font-mono text-muted-foreground">Billable Items</div>
+        </div>
+
+        <div className="card-surface p-3 border-l-4 border-l-blue-500 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+              <Warehouse className="h-3.5 w-3.5 text-blue-400" /> Godown Stock Valuation
+            </div>
+            <div className="text-base font-bold font-mono text-foreground mt-0.5">{inr(totalGodownAsset)}</div>
+          </div>
+          <div className="text-[10px] font-mono text-amber-400 font-semibold">Requires Transfer</div>
+        </div>
+
+        <div className="card-surface p-3 border-l-4 border-l-emerald-500 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> Projected Catalog Profit
+            </div>
+            <div className="text-base font-bold font-mono text-emerald-400 mt-0.5">+{inr(totalPotentialProfit)}</div>
+          </div>
+          <div className="text-[10px] font-mono text-emerald-400">Total Inventory Margin</div>
+        </div>
+      </div>
+
       <div className="card-surface">
         <div className="p-3 border-b border-border">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search by product name, barcode, SKU, or category…"
-            className="w-full h-9 px-3 rounded-md bg-input border border-border text-sm font-mono"
+            className="w-full h-9 px-3 rounded-md bg-input border border-border text-sm font-mono text-foreground"
           />
         </div>
         <div className="overflow-auto">
@@ -115,29 +183,37 @@ function InventoryPage() {
                 <th className="text-left px-4 py-2.5">Product Name</th>
                 <th className="text-left px-4 py-2.5">Barcode / SKU</th>
                 <th className="text-left px-4 py-2.5">Category</th>
-                <th className="text-right px-4 py-2.5">Cost</th>
-                <th className="text-right px-4 py-2.5">Selling Price</th>
-                <th className="text-right px-4 py-2.5">Unit Profit / Loss</th>
+                <th className="text-right px-4 py-2.5">Cost (₹)</th>
+                <th className="text-right px-4 py-2.5">Selling Price (₹)</th>
+                <th className="text-right px-4 py-2.5">Unit P&L</th>
                 <th className="text-right px-4 py-2.5">Shop Stock</th>
                 <th className="text-right px-4 py-2.5">Godown Stock</th>
-                <th className="text-right px-4 py-2.5">GST</th>
-                <th className="text-right px-4 py-2.5">Actions</th>
+                <th className="text-right px-4 py-2.5">Total Stock</th>
+                <th className="text-right px-4 py-2.5 whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {products.data?.map((p) => {
-                const low = Number(p.stock_qty) <= Number(p.min_stock_alert) || Number(p.stock_qty) <= Number(p.moq);
+                const shopQty = Number(p.stock_qty || 0);
+                const godownQty = Number(p.godown_qty || 0);
+                const totalStock = shopQty + godownQty;
+                const low = shopQty <= Number(p.min_stock_alert) || shopQty <= Number(p.moq);
                 const unitPnl = p.selling_price - p.cost_price;
                 const isProfit = unitPnl >= 0;
                 const marginPct = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
 
                 return (
                   <tr key={p.id} className="hover:bg-secondary/40 transition">
-                    <td className="px-4 py-2.5 font-medium flex items-center gap-2">
-                      {p.image_path ? (
-                        <img src={p.image_path} alt={p.name} className="h-7 w-7 rounded object-cover border border-border" />
-                      ) : null}
-                      <span>{p.name}</span>
+                    <td className="px-4 py-2.5 font-medium">
+                      <div className="flex items-center gap-2">
+                        {p.image_path ? (
+                          <img src={p.image_path} alt={p.name} className="h-7 w-7 rounded object-cover border border-border" />
+                        ) : null}
+                        <div>
+                          <div className="text-foreground">{p.name}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">Unit: {p.unit || 'Pcs'}</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs">
                       <div className="text-primary font-bold">{p.barcode}</div>
@@ -158,33 +234,41 @@ function InventoryPage() {
                       </div>
                     </td>
 
-                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${low ? "text-amber-400" : "text-foreground"}`}>
-                      {qty(p.stock_qty)}
+                    <td className={`px-4 py-2.5 text-right font-mono font-bold ${shopQty === 0 ? "text-destructive" : low ? "text-amber-400" : "text-foreground"}`}>
+                      {qty(shopQty)} {p.unit || 'pcs'}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{qty(p.godown_qty)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{p.gst_rate}%</td>
-                    <td className="px-4 py-2.5 text-right space-x-1.5">
-                      <button
-                        onClick={() => setPnlDetailProduct(p)}
-                        title="View Detailed Product P&L"
-                        className="h-7 px-2 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 text-xs font-semibold border border-emerald-500/30 inline-flex items-center gap-1"
-                      >
-                        <DollarSign className="h-3 w-3" /> P&L
-                      </button>
-                      <button
-                        onClick={() => setPrintLabelProduct(p)}
-                        title="Print Barcode Sticker Label"
-                        className="h-7 px-2 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1 text-primary"
-                      >
-                        <Printer className="h-3 w-3" /> Label
-                      </button>
-                      <button
-                        onClick={() => setEdit(p)}
-                        title="Edit Product"
-                        className="h-7 w-7 rounded bg-secondary hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground border border-border"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
+                    <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
+                      {qty(godownQty)} {p.unit || 'pcs'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-blue-400">
+                      {qty(totalStock)} {p.unit || 'pcs'}
+                    </td>
+
+                    {/* Clean Side-by-Side Action Buttons */}
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setPnlDetailProduct(p)}
+                          title="View Product P&L Breakdown"
+                          className="h-7 px-2 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 text-xs font-semibold border border-emerald-500/30 inline-flex items-center gap-1 transition"
+                        >
+                          <DollarSign className="h-3 w-3" /> P&L
+                        </button>
+                        <button
+                          onClick={() => setPrintLabelProduct(p)}
+                          title="Print Barcode Sticker Label"
+                          className="h-7 px-2 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1 text-primary transition"
+                        >
+                          <Printer className="h-3 w-3" /> Label
+                        </button>
+                        <button
+                          onClick={() => setEdit(p)}
+                          title="Edit Product"
+                          className="h-7 w-7 rounded bg-secondary hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground border border-border transition"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -235,7 +319,6 @@ function InventoryPage() {
 }
 
 function ProductPnlModal({ product, invoices, onClose }: { product: InventoryItem; invoices: any[]; onClose: () => void }) {
-  // Aggregate sales history for this product
   let unitsSold = 0;
   let totalRevenue = 0;
 
@@ -248,18 +331,26 @@ function ProductPnlModal({ product, invoices, onClose }: { product: InventoryIte
     });
   });
 
+  const shopQty = Number(product.stock_qty || 0);
+  const godownQty = Number(product.godown_qty || 0);
+  const totalStock = shopQty + godownQty;
   const unitPnl = product.selling_price - product.cost_price;
   const marginPct = product.selling_price > 0 ? (unitPnl / product.selling_price) * 100 : 0;
+
+  const totalCatalogCost = totalStock * product.cost_price;
+  const totalCatalogRevenue = totalStock * product.selling_price;
+  const projectedStockProfit = totalStock * unitPnl;
+
   const totalCogs = unitsSold * product.cost_price;
   const netRealizedProfit = totalRevenue - totalCogs;
   const isProfitable = netRealizedProfit >= 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-5 border-l-4 border-l-emerald-500 space-y-4">
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-emerald-500 space-y-4">
         <div className="flex justify-between items-center pb-2 border-b border-border">
           <div className="text-base font-bold text-foreground flex items-center gap-2">
-            <DollarSign className="h-5 w-5 text-emerald-400" /> Product P&L Analysis
+            <DollarSign className="h-5 w-5 text-emerald-400" /> Full Product Stock P&L Analysis
           </div>
           <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
         </div>
@@ -267,53 +358,74 @@ function ProductPnlModal({ product, invoices, onClose }: { product: InventoryIte
         <div>
           <div className="text-lg font-bold text-foreground">{product.name}</div>
           <div className="text-xs font-mono text-muted-foreground flex gap-3 mt-0.5">
+            <span>Unit: {product.unit || 'Piece (Pcs)'}</span>
             <span>Barcode: {product.barcode}</span>
             <span>SKU: {product.sku_code || product.barcode}</span>
           </div>
         </div>
 
-        {/* Key P&L Metrics Grid */}
-        <div className="grid grid-cols-2 gap-3 pt-2">
+        {/* Stock Breakdown */}
+        <div className="p-3 bg-card rounded border border-border grid grid-cols-3 gap-2 text-center text-xs font-mono">
+          <div>
+            <div className="text-[10px] uppercase text-muted-foreground font-sans font-bold">Shop Stock</div>
+            <div className="font-bold text-foreground mt-0.5">{qty(shopQty)} {product.unit || 'pcs'}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-muted-foreground font-sans font-bold">Godown Stock</div>
+            <div className="font-bold text-muted-foreground mt-0.5">{qty(godownQty)} {product.unit || 'pcs'}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-blue-400 font-sans font-bold">Total Stock</div>
+            <div className="font-bold text-blue-400 mt-0.5">{qty(totalStock)} {product.unit || 'pcs'}</div>
+          </div>
+        </div>
+
+        {/* Unit & Total Stock Financial Matrix */}
+        <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Cost Price (CP)</div>
-            <div className="text-base font-bold font-mono text-foreground">{inr(product.cost_price)}</div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Cost Price / Unit</div>
+            <div className="text-sm font-bold font-mono text-foreground">{inr(product.cost_price)}</div>
           </div>
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Selling Price (SP)</div>
-            <div className="text-base font-bold font-mono text-primary">{inr(product.selling_price)}</div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Selling Price / Unit</div>
+            <div className="text-sm font-bold font-mono text-primary">{inr(product.selling_price)}</div>
           </div>
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
             <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Profit / Margin</div>
-            <div className={`text-base font-bold font-mono ${unitPnl >= 0 ? "text-emerald-400" : "text-destructive"}`}>
+            <div className={`text-sm font-bold font-mono ${unitPnl >= 0 ? "text-emerald-400" : "text-destructive"}`}>
               {unitPnl >= 0 ? `+${inr(unitPnl)}` : inr(unitPnl)} ({marginPct.toFixed(1)}%)
             </div>
           </div>
           <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Units Sold</div>
-            <div className="text-base font-bold font-mono text-foreground">{qty(unitsSold)} Units</div>
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Valuation</div>
+            <div className="text-sm font-bold font-mono text-foreground">{inr(totalCatalogCost)}</div>
           </div>
         </div>
 
         {/* Realized Sales Financials */}
         <div className="p-4 bg-card rounded border border-border space-y-2 text-xs font-mono">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Total Sales Revenue:</span>
+            <span className="text-muted-foreground">Total Units Sold to Date:</span>
+            <span className="font-bold text-foreground">{qty(unitsSold)} {product.unit || 'pcs'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Realized Sales Revenue:</span>
             <span className="font-bold text-foreground">{inr(totalRevenue)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Cost of Goods Sold (COGS):</span>
+            <span className="text-muted-foreground">Realized Cost of Goods Sold (COGS):</span>
             <span className="font-bold text-muted-foreground">-{inr(totalCogs)}</span>
           </div>
           <div className="pt-2 border-t border-border flex justify-between items-center text-sm font-sans font-bold">
-            <span className="text-muted-foreground">Net Realized P&L:</span>
+            <span className="text-muted-foreground">Net Realized Profit:</span>
             <span className={`font-mono text-base ${isProfitable ? "text-emerald-400" : "text-destructive"}`}>
               {isProfitable ? `+${inr(netRealizedProfit)}` : inr(netRealizedProfit)}
             </span>
           </div>
         </div>
 
-        <button onClick={onClose} className="w-full h-9 rounded bg-secondary border border-border text-xs font-bold hover:bg-muted transition">
-          Close Analysis
+        <button onClick={onClose} className="w-full h-9 rounded bg-secondary border border-border text-xs font-bold hover:bg-muted transition text-foreground">
+          Close P&L Analysis
         </button>
       </div>
     </div>
@@ -329,7 +441,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
     name: product?.name ?? "",
     barcode: product?.barcode ?? generatePmaBarcode(),
     category: product?.category ?? "",
-    unit: product?.unit ?? "Piece",
+    unit: product?.unit ?? "Piece (Pcs)",
     cost_price: product?.cost_price,
     selling_price: product?.selling_price,
     stock_qty: product?.stock_qty,
@@ -341,11 +453,33 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
     image_path: product?.image_path ?? "",
   });
 
+  const [totalBatchCost, setTotalBatchCost] = useState<string>("");
+
+  const shopQtyNum = Number(f.stock_qty || 0);
+  const godownQtyNum = Number(f.godown_qty || 0);
+  const totalStockNum = shopQtyNum + godownQtyNum;
+
+  const cpNum = Number(f.cost_price || 0);
+  const spNum = Number(f.selling_price || 0);
+  const totalInventoryValuation = totalStockNum * cpNum;
+  const totalExpectedRevenue = totalStockNum * spNum;
+  const totalExpectedProfit = totalStockNum * (spNum - cpNum);
+
+  function handleTotalBatchCostChange(val: string) {
+    setTotalBatchCost(val);
+    const parsedBatch = parseFloat(val);
+    if (!isNaN(parsedBatch) && parsedBatch > 0 && totalStockNum > 0) {
+      const calculatedUnitCost = Number((parsedBatch / totalStockNum).toFixed(2));
+      setF((prev) => ({ ...prev, cost_price: calculatedUnitCost }));
+    }
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!f.name?.trim()) { toast.error("Product name required"); return; }
     db.saveInventoryItem({
       ...f,
+      unit: f.unit || "Piece (Pcs)",
       cost_price: f.cost_price ?? 0,
       selling_price: f.selling_price ?? 0,
       stock_qty: f.stock_qty ?? 0,
@@ -378,171 +512,229 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-primary">
-        <div className="flex justify-between items-center mb-4 pb-2 border-b border-border">
-          <div className="text-base font-bold text-foreground">{product ? "Edit Product" : "New Inventory Product"}</div>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xl card-surface p-5 border-l-4 border-l-primary space-y-4 max-h-[90vh] overflow-auto">
+        <div className="flex justify-between items-center pb-2 border-b border-border">
+          <div className="text-base font-bold text-foreground">{product ? "Edit Inventory Product" : "New Inventory Product Entry"}</div>
           <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
         </div>
 
-        <form onSubmit={submit} className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Product Name *</div>
-              <input
-                required
-                value={f.name}
-                onChange={(e) => setF({ ...f, name: e.target.value })}
-                placeholder="e.g. Steel plates / Copper wire"
-                className={ic}
-                autoFocus
-              />
-            </label>
-          </div>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Product Name *</div>
+                <input
+                  required
+                  value={f.name}
+                  onChange={(e) => setF({ ...f, name: e.target.value })}
+                  placeholder="e.g. Steel plates (Bought in Kgs or Pcs)"
+                  className={ic}
+                  autoFocus
+                />
+              </label>
+            </div>
 
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex justify-between">
-                <span>Barcode / EAN</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newCode = generatePmaBarcode();
-                    setF({ ...f, barcode: newCode, sku_code: f.sku_code || newCode });
-                  }}
-                  className="text-primary hover:underline text-[9px]"
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex justify-between">
+                  <span>Barcode / EAN</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newCode = generatePmaBarcode();
+                      setF({ ...f, barcode: newCode, sku_code: f.sku_code || newCode });
+                    }}
+                    className="text-primary hover:underline text-[9px]"
+                  >
+                    Gen PMA
+                  </button>
+                </div>
+                <input
+                  value={f.barcode}
+                  onChange={(e) => setF({ ...f, barcode: e.target.value })}
+                  placeholder="PMA100001"
+                  className={ic}
+                />
+              </label>
+            </div>
+
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Category</div>
+                <input
+                  value={f.category}
+                  onChange={(e) => setF({ ...f, category: e.target.value })}
+                  placeholder="e.g. Vessals / Hardware"
+                  className={ic}
+                />
+              </label>
+            </div>
+
+            {/* Measurement Unit Choice */}
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex items-center gap-1">
+                  <Scale className="h-3 w-3 text-primary" /> Measurement Unit
+                </div>
+                <select
+                  value={f.unit || "Piece (Pcs)"}
+                  onChange={(e) => setF({ ...f, unit: e.target.value })}
+                  className={ic}
                 >
-                  Gen PMA
-                </button>
+                  {UNIT_OPTIONS.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">SKU Code</div>
+                <input
+                  value={f.sku_code}
+                  onChange={(e) => setF({ ...f, sku_code: e.target.value })}
+                  placeholder="Auto-generated SKU"
+                  className={ic}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Stock Qty Section: Shop vs Godown */}
+          <div className="p-3 bg-card rounded border border-border space-y-2">
+            <div className="text-xs font-bold text-foreground flex items-center justify-between">
+              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Allocation & Quantities</span>
+              <span className="text-xs font-mono font-bold text-blue-400">Total Stock: {qty(totalStockNum)} {f.unit || 'pcs'}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty (Billable)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={f.stock_qty ?? ""}
+                    onChange={(e) => setF({ ...f, stock_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    placeholder="0"
+                    className={ic}
+                  />
+                </label>
               </div>
-              <input
-                value={f.barcode}
-                onChange={(e) => setF({ ...f, barcode: e.target.value })}
-                placeholder="PMA100001"
-                className={ic}
-              />
-            </label>
+
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty (Requires Transfer)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={f.godown_qty ?? ""}
+                    onChange={(e) => setF({ ...f, godown_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    placeholder="0"
+                    className={ic}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Category</div>
-              <input
-                value={f.category}
-                onChange={(e) => setF({ ...f, category: e.target.value })}
-                placeholder="e.g. Vessals / Electricals"
-                className={ic}
-              />
-            </label>
+          {/* Pricing & Cost Calculation Helper */}
+          <div className="p-3 bg-card rounded border border-border space-y-2">
+            <div className="text-xs font-bold text-foreground flex items-center justify-between">
+              <span className="flex items-center gap-1.5"><Calculator className="h-3.5 w-3.5 text-emerald-400" /> Pricing & Cost Auto-Calculation</span>
+              <span className="text-xs font-mono text-emerald-400">Total Valuation: {inr(totalInventoryValuation)}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total Batch Purchase Cost (₹)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={totalBatchCost}
+                    onChange={(e) => handleTotalBatchCostChange(e.target.value)}
+                    placeholder="e.g. 5000 (Auto-calculates Cost/Unit)"
+                    className={ic}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Price / Unit (₹)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={f.cost_price ?? ""}
+                    onChange={(e) => setF({ ...f, cost_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    placeholder="0.00"
+                    className={ic}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Selling Price / Unit (₹) *</div>
+                  <input
+                    required
+                    type="number"
+                    step="0.01"
+                    value={f.selling_price ?? ""}
+                    onChange={(e) => setF({ ...f, selling_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    placeholder="0.00"
+                    className={ic}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Price (₹)</div>
-              <input
-                type="number"
-                step="0.01"
-                value={f.cost_price ?? ""}
-                onChange={(e) => setF({ ...f, cost_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="0.00"
-                className={ic}
-              />
-            </label>
-          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">MOQ Reorder Alert</div>
+                <input
+                  type="number"
+                  value={f.moq ?? ""}
+                  onChange={(e) => setF({ ...f, moq: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                  placeholder="5"
+                  className={ic}
+                />
+              </label>
+            </div>
 
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Selling Price (₹) *</div>
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={f.selling_price ?? ""}
-                onChange={(e) => setF({ ...f, selling_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="0.00"
-                className={ic}
-              />
-            </label>
-          </div>
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Min Stock Alert</div>
+                <input
+                  type="number"
+                  value={f.min_stock_alert ?? ""}
+                  onChange={(e) => setF({ ...f, min_stock_alert: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                  placeholder="10"
+                  className={ic}
+                />
+              </label>
+            </div>
 
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty</div>
-              <input
-                type="number"
-                value={f.stock_qty ?? ""}
-                onChange={(e) => setF({ ...f, stock_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="0"
-                className={ic}
-              />
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty</div>
-              <input
-                type="number"
-                value={f.godown_qty ?? ""}
-                onChange={(e) => setF({ ...f, godown_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="0"
-                className={ic}
-              />
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">MOQ Reorder Alert</div>
-              <input
-                type="number"
-                value={f.moq ?? ""}
-                onChange={(e) => setF({ ...f, moq: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="5"
-                className={ic}
-              />
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Min Stock Alert</div>
-              <input
-                type="number"
-                value={f.min_stock_alert ?? ""}
-                onChange={(e) => setF({ ...f, min_stock_alert: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="10"
-                className={ic}
-              />
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">SKU Code</div>
-              <input
-                value={f.sku_code}
-                onChange={(e) => setF({ ...f, sku_code: e.target.value })}
-                placeholder="Auto-generated SKU"
-                className={ic}
-              />
-            </label>
-          </div>
-
-          <div>
-            <label className="block">
-              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">GST Rate (%)</div>
-              <input
-                type="number"
-                value={f.gst_rate ?? ""}
-                onChange={(e) => setF({ ...f, gst_rate: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
-                placeholder="18"
-                className={ic}
-              />
-            </label>
+            <div>
+              <label className="block">
+                <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">GST Rate (%)</div>
+                <input
+                  type="number"
+                  value={f.gst_rate ?? ""}
+                  onChange={(e) => setF({ ...f, gst_rate: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                  placeholder="18"
+                  className={ic}
+                />
+              </label>
+            </div>
           </div>
 
           {/* Product Image Upload */}
-          <div className="col-span-2 space-y-1.5">
+          <div className="space-y-1.5">
             <div className="text-[10px] uppercase font-semibold text-muted-foreground">Product Image (Optional Upload)</div>
             <div className="flex gap-2 items-center">
               {f.image_path ? (
@@ -570,7 +762,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
             </div>
           </div>
 
-          <button type="submit" className="col-span-2 h-10 rounded-md bg-primary text-primary-foreground text-xs font-bold hover:accent-glow transition mt-1">
+          <button type="submit" className="w-full h-10 rounded-md bg-primary text-primary-foreground text-xs font-bold hover:accent-glow transition mt-2">
             Save Product Record
           </button>
         </form>
@@ -614,7 +806,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="h-9 px-3 rounded bg-secondary border border-border text-xs font-semibold">
+          <button onClick={onClose} className="h-9 px-3 rounded bg-secondary border border-border text-xs font-semibold text-foreground">
             Cancel
           </button>
           <button onClick={handlePrintLabel} className="h-9 px-4 rounded bg-primary text-primary-foreground font-bold text-xs flex items-center gap-1.5 hover:accent-glow">
@@ -668,7 +860,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
         name: r['Name'] || r['name'] || '',
         barcode: r['Barcode'] || r['barcode'] || generatePmaBarcode(),
         category: r['Category'] || r['category'] || 'General',
-        unit: r['Unit'] || r['unit'] || 'Piece',
+        unit: r['Unit'] || r['unit'] || 'Piece (Pcs)',
         cost_price: Number(r['Cost Price'] || r['cost_price']) || 0,
         selling_price: Number(r['Selling Price'] || r['selling_price']) || 0,
         stock_qty: Number(r['Stock Qty'] || r['stock_qty']) || 0,
