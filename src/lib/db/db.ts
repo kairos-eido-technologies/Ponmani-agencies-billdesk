@@ -24,7 +24,7 @@ export interface InventoryItem {
   godown_qty: number;
   moq: number;
   min_stock_alert: number;
-  hsn_code: string;
+  sku_code?: string;
   gst_rate: number;
   image_path?: string;
   created_at: string;
@@ -326,7 +326,7 @@ class OfflineDB {
     } else {
       const newItem: InventoryItem = {
         id: 'prod-' + Date.now(),
-        barcode: item.barcode || '890' + Math.floor(100000000 + Math.random() * 900000000),
+        barcode: item.barcode || 'PMA' + Math.floor(100000 + Math.random() * 900000),
         name: item.name,
         category: item.category || 'General',
         unit: item.unit || 'Piece',
@@ -336,7 +336,7 @@ class OfflineDB {
         godown_qty: Number(item.godown_qty) || 0,
         moq: Number(item.moq) || 1,
         min_stock_alert: Number(item.min_stock_alert) || 5,
-        hsn_code: item.hsn_code || '8414',
+        sku_code: item.sku_code || item.barcode || ('PMA' + Math.floor(100000 + Math.random() * 900000)),
         gst_rate: Number(item.gst_rate) || 18,
         image_path: item.image_path || '',
         created_at: new Date().toISOString(),
@@ -359,7 +359,7 @@ class OfflineDB {
         errors.push(`Row ${i + 1}: Missing product name`);
         continue;
       }
-      const barcode = raw.barcode?.toString().trim() || '890' + Math.floor(1000000000 + Math.random() * 8000000000);
+      const barcode = raw.barcode?.toString().trim() || ('PMA' + Math.floor(100000 + Math.random() * 900000));
       if (barcodesSeen.has(barcode)) {
         errors.push(`Row ${i + 1}: Duplicate barcode ${barcode}`);
         continue;
@@ -378,7 +378,7 @@ class OfflineDB {
         godown_qty: Number(raw.godown_qty) || 0,
         moq: Number(raw.moq) || 1,
         min_stock_alert: Number(raw.min_stock_alert) || 5,
-        hsn_code: raw.hsn_code?.toString() || '8414',
+        sku_code: raw.sku_code || barcode,
         gst_rate: Number(raw.gst_rate) || 18,
         image_path: raw.image_path || '',
         created_at: new Date().toISOString(),

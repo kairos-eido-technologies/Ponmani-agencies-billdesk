@@ -18,9 +18,9 @@ export class ExcelEngine {
 
     if (type === 'products') {
       filename = 'Ponmani_Products_Import_Template.xlsx';
-      headers = ['Barcode', 'Name', 'Category', 'Unit', 'Cost Price', 'Selling Price', 'Stock Qty', 'Godown Qty', 'MOQ', 'Min Stock Alert', 'HSN Code', 'GST Rate (%)'];
+      headers = ['Barcode', 'Name', 'Category', 'Unit', 'Cost Price', 'Selling Price', 'Stock Qty', 'Godown Qty', 'MOQ', 'Min Stock Alert', 'SKU Code', 'GST Rate (%)'];
       sampleRow = {
-        'Barcode': '890123456799',
+        'Barcode': 'PMA100001',
         'Name': 'Havells 2.5 sqmm Wire (100m Blue)',
         'Category': 'Electricals',
         'Unit': 'Roll',
@@ -30,7 +30,7 @@ export class ExcelEngine {
         'Godown Qty': 100,
         'MOQ': 5,
         'Min Stock Alert': 10,
-        'HSN Code': '8544',
+        'SKU Code': 'SKU-PMA1001',
         'GST Rate (%)': 18,
       };
     } else if (type === 'customers') {
@@ -143,17 +143,17 @@ export class ExcelEngine {
     const hsnMap: Record<string, { description: string; qty: number; total_val: number; tax_val: number }> = {};
     store.invoice_items.forEach((ii) => {
       const prod = store.inventory.find((p) => p.id === ii.product_id);
-      const hsn = prod?.hsn_code || '8414';
-      if (!hsnMap[hsn]) {
-        hsnMap[hsn] = { description: prod?.category || 'Hardware', qty: 0, total_val: 0, tax_val: 0 };
+      const sku = prod?.sku_code || prod?.barcode || 'PMA100001';
+      if (!hsnMap[sku]) {
+        hsnMap[sku] = { description: prod?.category || 'Hardware', qty: 0, total_val: 0, tax_val: 0 };
       }
-      hsnMap[hsn].qty += ii.qty;
-      hsnMap[hsn].total_val += ii.total_price;
-      hsnMap[hsn].tax_val += (ii.total_price * ii.tax_rate) / 100;
+      hsnMap[sku].qty += ii.qty;
+      hsnMap[sku].total_val += ii.total_price;
+      hsnMap[sku].tax_val += (ii.total_price * ii.tax_rate) / 100;
     });
 
-    const hsnSummary = Object.entries(hsnMap).map(([hsn, d]) => ({
-      'HSN': hsn,
+    const hsnSummary = Object.entries(hsnMap).map(([sku, d]) => ({
+      'SKU / Item Code': sku,
       'Description': d.description,
       'Total Quantity': d.qty,
       'Total Value (₹)': d.total_val,

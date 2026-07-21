@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, InventoryItem } from "@/lib/db/db";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
 
@@ -16,6 +16,7 @@ function InventoryPage() {
   const [edit, setEdit] = useState<InventoryItem | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [printLabelProduct, setPrintLabelProduct] = useState<InventoryItem | null>(null);
 
   const products = useQuery({
     queryKey: ["local-inventory-products", q],
@@ -23,7 +24,12 @@ function InventoryPage() {
       const all = db.getInventory();
       if (!q.trim()) return all;
       const clean = q.toLowerCase();
-      return all.filter((p) => p.name.toLowerCase().includes(clean) || p.barcode.includes(clean) || p.category.toLowerCase().includes(clean));
+      return all.filter((p) =>
+        p.name.toLowerCase().includes(clean) ||
+        p.barcode.toLowerCase().includes(clean) ||
+        (p.sku_code && p.sku_code.toLowerCase().includes(clean)) ||
+        p.category.toLowerCase().includes(clean)
+      );
     },
   });
 
@@ -39,7 +45,7 @@ function InventoryPage() {
       'Godown Stock': p.godown_qty,
       'MOQ Alert': p.moq,
       'Min Stock Alert': p.min_stock_alert,
-      HSN: p.hsn_code,
+      'SKU Code': p.sku_code || p.barcode,
       'GST Rate (%)': p.gst_rate,
     }));
     ExcelEngine.exportToExcel(data, `Ponmani_Inventory_Catalog_${new Date().toISOString().split('T')[0]}`);
@@ -86,7 +92,7 @@ function InventoryPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by product name, barcode, or category…"
+            placeholder="Search by product name, barcode, SKU, or category…"
             className="w-full h-9 px-3 rounded-md bg-input border border-border text-sm font-mono"
           />
         </div>
@@ -95,15 +101,14 @@ function InventoryPage() {
             <thead className="text-[10px] uppercase text-muted-foreground tracking-wider bg-card border-b border-border">
               <tr>
                 <th className="text-left px-4 py-2.5">Product Name</th>
-                <th className="text-left px-4 py-2.5">Barcode</th>
+                <th className="text-left px-4 py-2.5">Barcode / SKU</th>
                 <th className="text-left px-4 py-2.5">Category</th>
                 <th className="text-right px-4 py-2.5">Cost</th>
                 <th className="text-right px-4 py-2.5">Selling Price</th>
                 <th className="text-right px-4 py-2.5">Shop Stock</th>
                 <th className="text-right px-4 py-2.5">Godown Stock</th>
-                <th className="text-right px-4 py-2.5">MOQ</th>
                 <th className="text-right px-4 py-2.5">GST</th>
-                <th className="w-10"></th>
+                <th className="text-right px-4 py-2.5">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -111,8 +116,16 @@ function InventoryPage() {
                 const low = Number(p.stock_qty) <= Number(p.min_stock_alert) || Number(p.stock_qty) <= Number(p.moq);
                 return (
                   <tr key={p.id} className="hover:bg-secondary/40 transition">
-                    <td className="px-4 py-2.5 font-medium">{p.name}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{p.barcode}</td>
+                    <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                      {p.image_path ? (
+                        <img src={p.image_path} alt={p.name} className="h-7 w-7 rounded object-cover border border-border" />
+                      ) : null}
+                      <span>{p.name}</span>
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      <div className="text-primary font-bold">{p.barcode}</div>
+                      <div className="text-[10px] text-muted-foreground">SKU: {p.sku_code || p.barcode}</div>
+                    </td>
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">{p.category}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{inr(p.cost_price)}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold text-primary">{inr(p.selling_price)}</td>
@@ -120,10 +133,20 @@ function InventoryPage() {
                       {qty(p.stock_qty)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{qty(p.godown_qty)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{qty(p.moq)}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{p.gst_rate}%</td>
-                    <td className="px-2 text-right">
-                      <button onClick={() => setEdit(p)} className="p-1.5 hover:bg-secondary rounded text-muted-foreground hover:text-foreground">
+                    <td className="px-4 py-2.5 text-right space-x-1.5">
+                      <button
+                        onClick={() => setPrintLabelProduct(p)}
+                        title="Print Barcode Sticker Label"
+                        className="h-7 px-2 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1 text-primary"
+                      >
+                        <Printer className="h-3 w-3" /> Label
+                      </button>
+                      <button
+                        onClick={() => setEdit(p)}
+                        title="Edit Product"
+                        className="h-7 w-7 rounded bg-secondary hover:bg-muted inline-flex items-center justify-center text-muted-foreground hover:text-foreground border border-border"
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -132,7 +155,7 @@ function InventoryPage() {
               })}
               {products.data?.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center py-12 text-sm text-muted-foreground">
+                  <td colSpan={9} className="text-center py-12 text-sm text-muted-foreground">
                     No matching products in local database.
                   </td>
                 </tr>
@@ -156,14 +179,25 @@ function InventoryPage() {
           onImported={() => { qc.invalidateQueries({ queryKey: ["local-inventory-products"] }); setShowImportModal(false); }}
         />
       )}
+
+      {printLabelProduct && (
+        <BarcodePrintModal
+          product={printLabelProduct}
+          onClose={() => setPrintLabelProduct(null)}
+        />
+      )}
     </div>
   );
+}
+
+function generatePmaBarcode() {
+  return "PMA" + Math.floor(100000 + Math.random() * 900000);
 }
 
 function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState<Partial<InventoryItem>>({
     name: product?.name ?? "",
-    barcode: product?.barcode ?? "",
+    barcode: product?.barcode ?? generatePmaBarcode(),
     category: product?.category ?? "Electricals",
     unit: product?.unit ?? "Piece",
     cost_price: product?.cost_price ?? 0,
@@ -172,7 +206,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
     godown_qty: product?.godown_qty ?? 0,
     moq: product?.moq ?? 5,
     min_stock_alert: product?.min_stock_alert ?? 10,
-    hsn_code: product?.hsn_code ?? "8414",
+    sku_code: product?.sku_code ?? product?.barcode ?? generatePmaBarcode(),
     gst_rate: product?.gst_rate ?? 18,
     image_path: product?.image_path ?? "",
   });
@@ -180,13 +214,30 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!f.name?.trim()) { toast.error("Product name required"); return; }
-    db.saveInventoryItem({ ...f, id: product?.id } as any);
-    toast.success(product ? "Product updated" : "Product created");
+    db.saveInventoryItem({
+      ...f,
+      id: product?.id,
+      barcode: f.barcode || generatePmaBarcode(),
+      sku_code: f.sku_code || f.barcode || generatePmaBarcode(),
+    } as any);
+    toast.success(product ? "Product updated" : "Product created with PMA Barcode");
     onSaved();
   }
 
-  const ic = "w-full h-9 rounded bg-input border border-border px-3 text-xs font-mono focus:outline-none focus:border-primary";
-  const L = ({ label, children }: any) => <label className="block"><div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>{children}</label>;
+  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      if (evt.target?.result) {
+        setF((prev) => ({ ...prev, image_path: evt.target?.result as string }));
+        toast.success("Product image uploaded successfully");
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  const ic = "w-full h-9 rounded bg-input border border-border px-3 text-xs font-mono focus:outline-none focus:border-primary text-foreground";
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
@@ -198,51 +249,261 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
         <form onSubmit={submit} className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <L label="Product Name *">
-              <input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={ic} autoFocus />
-            </L>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Product Name *</div>
+              <input
+                required
+                value={f.name}
+                onChange={(e) => setF({ ...f, name: e.target.value })}
+                className={ic}
+                autoFocus
+              />
+            </label>
           </div>
-          <L label="Barcode / EAN">
-            <input value={f.barcode} onChange={(e) => setF({ ...f, barcode: e.target.value })} placeholder="Auto-generated if empty" className={ic} />
-          </L>
-          <L label="Category">
-            <input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} className={ic} />
-          </L>
-          <L label="Cost Price (₹)">
-            <input type="number" step="0.01" value={f.cost_price} onChange={(e) => setF({ ...f, cost_price: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <L label="Selling Price (₹) *">
-            <input required type="number" step="0.01" value={f.selling_price} onChange={(e) => setF({ ...f, selling_price: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <L label="Shop Stock Qty">
-            <input type="number" value={f.stock_qty} onChange={(e) => setF({ ...f, stock_qty: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <L label="Godown Stock Qty">
-            <input type="number" value={f.godown_qty} onChange={(e) => setF({ ...f, godown_qty: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <L label="MOQ Reorder Alert">
-            <input type="number" value={f.moq} onChange={(e) => setF({ ...f, moq: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <L label="Min Stock Alert">
-            <input type="number" value={f.min_stock_alert} onChange={(e) => setF({ ...f, min_stock_alert: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <L label="HSN Code">
-            <input value={f.hsn_code} onChange={(e) => setF({ ...f, hsn_code: e.target.value })} className={ic} />
-          </L>
-          <L label="GST Rate (%)">
-            <input type="number" value={f.gst_rate} onChange={(e) => setF({ ...f, gst_rate: parseFloat(e.target.value) || 0 })} className={ic} />
-          </L>
-          <div className="col-span-2">
-            <L label="Local Image Path (Optional)">
-              <input value={f.image_path} onChange={(e) => setF({ ...f, image_path: e.target.value })} placeholder="e.g. C:\Images\fan.jpg" className={ic} />
-            </L>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex justify-between">
+                <span>Barcode / EAN</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newCode = generatePmaBarcode();
+                    setF({ ...f, barcode: newCode, sku_code: f.sku_code || newCode });
+                  }}
+                  className="text-primary hover:underline text-[9px]"
+                >
+                  Gen PMA
+                </button>
+              </div>
+              <input
+                value={f.barcode}
+                onChange={(e) => setF({ ...f, barcode: e.target.value })}
+                placeholder="PMA100001"
+                className={ic}
+              />
+            </label>
           </div>
-          <button type="submit" className="col-span-2 h-10 rounded-md bg-primary text-primary-foreground text-xs font-bold hover:accent-glow transition">
-            Save Product
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Category</div>
+              <input
+                value={f.category}
+                onChange={(e) => setF({ ...f, category: e.target.value })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Price (₹)</div>
+              <input
+                type="number"
+                step="0.01"
+                value={f.cost_price}
+                onChange={(e) => setF({ ...f, cost_price: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Selling Price (₹) *</div>
+              <input
+                required
+                type="number"
+                step="0.01"
+                value={f.selling_price}
+                onChange={(e) => setF({ ...f, selling_price: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty</div>
+              <input
+                type="number"
+                value={f.stock_qty}
+                onChange={(e) => setF({ ...f, stock_qty: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty</div>
+              <input
+                type="number"
+                value={f.godown_qty}
+                onChange={(e) => setF({ ...f, godown_qty: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">MOQ Reorder Alert</div>
+              <input
+                type="number"
+                value={f.moq}
+                onChange={(e) => setF({ ...f, moq: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Min Stock Alert</div>
+              <input
+                type="number"
+                value={f.min_stock_alert}
+                onChange={(e) => setF({ ...f, min_stock_alert: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">SKU Code</div>
+              <input
+                value={f.sku_code}
+                onChange={(e) => setF({ ...f, sku_code: e.target.value })}
+                placeholder="SKU-1001"
+                className={ic}
+              />
+            </label>
+          </div>
+
+          <div>
+            <label className="block">
+              <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">GST Rate (%)</div>
+              <input
+                type="number"
+                value={f.gst_rate}
+                onChange={(e) => setF({ ...f, gst_rate: parseFloat(e.target.value) || 0 })}
+                className={ic}
+              />
+            </label>
+          </div>
+
+          {/* Product Image Upload */}
+          <div className="col-span-2 space-y-1.5">
+            <div className="text-[10px] uppercase font-semibold text-muted-foreground">Product Image (Optional Upload)</div>
+            <div className="flex gap-2 items-center">
+              {f.image_path ? (
+                <img src={f.image_path} alt="Preview" className="h-10 w-10 rounded object-cover border border-primary" />
+              ) : null}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                id="product-image-upload"
+                className="hidden"
+              />
+              <label
+                htmlFor="product-image-upload"
+                className="h-9 px-3 rounded bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:bg-muted transition text-foreground"
+              >
+                <Image className="h-3.5 w-3.5 text-primary" /> Upload Image File
+              </label>
+              <input
+                value={f.image_path}
+                onChange={(e) => setF({ ...f, image_path: e.target.value })}
+                placeholder="Or paste image URL / local path…"
+                className={`flex-1 ${ic}`}
+              />
+            </div>
+          </div>
+
+          <button type="submit" className="col-span-2 h-10 rounded-md bg-primary text-primary-foreground text-xs font-bold hover:accent-glow transition mt-1">
+            Save Product Record
           </button>
         </form>
       </div>
     </div>
+  );
+}
+
+function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClose: () => void }) {
+  function handlePrintLabel() {
+    window.print();
+  }
+
+  const barcodeCode = product.barcode || product.sku_code || generatePmaBarcode();
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm card-surface p-5 border-l-4 border-l-primary space-y-4">
+        <div className="flex justify-between items-center pb-2 border-b border-border">
+          <div className="text-base font-bold text-foreground flex items-center gap-2">
+            <Barcode className="h-5 w-5 text-primary" /> Thermal Barcode Label
+          </div>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
+        </div>
+
+        {/* 50mm x 25mm Thermal Label Sticker Preview */}
+        <div className="p-4 bg-white text-black rounded border border-gray-300 shadow-md text-center space-y-1 print:border-0 print:p-2 print:shadow-none font-sans">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-700">Ponmani Agencies</div>
+          <div className="text-sm font-black truncate leading-tight text-gray-900">{product.name}</div>
+          <div className="text-lg font-extrabold text-black font-mono">₹ {product.selling_price.toFixed(2)}</div>
+
+          {/* Visual Barcode SVG */}
+          <div className="py-1 flex justify-center">
+            <BarcodeVisual code={barcodeCode} />
+          </div>
+
+          <div className="text-[10px] font-mono font-bold text-gray-800 flex justify-between px-2">
+            <span>BARCODE: {barcodeCode}</span>
+            <span>SKU: {product.sku_code || barcodeCode}</span>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} className="h-9 px-3 rounded bg-secondary border border-border text-xs font-semibold">
+            Cancel
+          </button>
+          <button onClick={handlePrintLabel} className="h-9 px-4 rounded bg-primary text-primary-foreground font-bold text-xs flex items-center gap-1.5 hover:accent-glow">
+            <Printer className="h-3.5 w-3.5" /> Print Thermal Sticker
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BarcodeVisual({ code }: { code: string }) {
+  const clean = code.toUpperCase();
+  const bars: boolean[] = [];
+  for (let i = 0; i < clean.length; i++) {
+    const charCode = clean.charCodeAt(i);
+    bars.push(true, (charCode % 2 === 0), false, true, (charCode % 3 === 0), true, false);
+  }
+
+  return (
+    <svg className="w-full h-10 max-w-[220px]" viewBox="0 0 200 40">
+      <rect width="200" height="40" fill="white" />
+      {bars.map((b, idx) =>
+        b ? (
+          <rect
+            key={idx}
+            x={idx * (200 / bars.length)}
+            y="2"
+            width={(200 / bars.length) * 0.85}
+            height="36"
+            fill="black"
+          />
+        ) : null
+      )}
+    </svg>
   );
 }
 
@@ -259,7 +520,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
       const rows = await ExcelEngine.parseExcelFile(file);
       const mapped = rows.map((r: any) => ({
         name: r['Name'] || r['name'] || '',
-        barcode: r['Barcode'] || r['barcode'] || '',
+        barcode: r['Barcode'] || r['barcode'] || generatePmaBarcode(),
         category: r['Category'] || r['category'] || 'General',
         unit: r['Unit'] || r['unit'] || 'Piece',
         cost_price: Number(r['Cost Price'] || r['cost_price']) || 0,
@@ -268,7 +529,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
         godown_qty: Number(r['Godown Qty'] || r['godown_qty']) || 0,
         moq: Number(r['MOQ'] || r['moq']) || 5,
         min_stock_alert: Number(r['Min Stock Alert'] || r['min_stock_alert']) || 10,
-        hsn_code: r['HSN Code'] || r['hsn_code'] || '8414',
+        sku_code: r['SKU Code'] || r['sku_code'] || r['HSN Code'] || generatePmaBarcode(),
         gst_rate: Number(r['GST Rate (%)'] || r['gst_rate']) || 18,
       }));
       setParsedRows(mapped);
