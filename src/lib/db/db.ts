@@ -176,11 +176,51 @@ export interface DBStore {
   settings: Record<string, any>;
 }
 
-import { generateLargeSeedData } from './seed-generator';
+const STORAGE_KEY = 'ponmani_offline_db_v2';
 
-const STORAGE_KEY = 'ponmani_offline_db_v1';
-
-const INITIAL_SEED: DBStore = generateLargeSeedData();
+const INITIAL_SEED: DBStore = {
+  users: [
+    {
+      id: 'usr-1',
+      username: 'admin',
+      pin: '1234',
+      role: 'Admin',
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 'usr-2',
+      username: 'cashier',
+      pin: '0000',
+      role: 'Cashier',
+      created_at: new Date().toISOString(),
+    },
+  ],
+  inventory: [],
+  vendors: [],
+  purchase_orders: [],
+  purchase_items: [],
+  customers: [],
+  loyalty_ledger: [],
+  invoices: [],
+  invoice_items: [],
+  service_tickets: [],
+  scrap_entries: [],
+  godown_transfers: [],
+  backups_log: [],
+  settings: {
+    shop_name: 'Ponmani Agencies',
+    shop_address: '142 Main Road, Tenkasi, Tamil Nadu - 627811',
+    shop_phone: '+91 94422 12345',
+    shop_gstin: '33AAPFP1234H1Z9',
+    printer_type: 'Thermal ESC/POS 80mm',
+    printer_name: 'POS-80 Series',
+    auto_backup_enabled: true,
+    auto_backup_frequency: 'Daily',
+    retain_backups_count: 30,
+    scanner_prefix: '',
+    scanner_suffix: 'Enter',
+  },
+};
 
 class OfflineDB {
   private memoryData: DBStore;
@@ -223,9 +263,8 @@ class OfflineDB {
   }
 
   public resetToSeed() {
-    const freshSeed = generateLargeSeedData();
-    this.saveToStorage(freshSeed);
-    return freshSeed;
+    this.saveToStorage(INITIAL_SEED);
+    return INITIAL_SEED;
   }
 
   public restoreFullBackup(newData: DBStore) {
