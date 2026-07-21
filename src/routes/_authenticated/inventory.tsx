@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
 
@@ -17,6 +17,7 @@ function InventoryPage() {
   const [showNew, setShowNew] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [printLabelProduct, setPrintLabelProduct] = useState<InventoryItem | null>(null);
+  const [pnlDetailProduct, setPnlDetailProduct] = useState<InventoryItem | null>(null);
 
   const products = useQuery({
     queryKey: ["local-inventory-products", q],
@@ -33,30 +34,41 @@ function InventoryPage() {
     },
   });
 
+  const invoicesData = useQuery({
+    queryKey: ["local-invoices-for-pnl"],
+    queryFn: async () => db.getInvoices(),
+  });
+
   function exportCatalog() {
-    const data = (products.data || []).map((p) => ({
-      Barcode: p.barcode,
-      Name: p.name,
-      Category: p.category,
-      Unit: p.unit,
-      'Cost Price (₹)': p.cost_price,
-      'Selling Price (₹)': p.selling_price,
-      'Shop Stock': p.stock_qty,
-      'Godown Stock': p.godown_qty,
-      'MOQ Alert': p.moq,
-      'Min Stock Alert': p.min_stock_alert,
-      'SKU Code': p.sku_code || p.barcode,
-      'GST Rate (%)': p.gst_rate,
-    }));
-    ExcelEngine.exportToExcel(data, `Ponmani_Inventory_Catalog_${new Date().toISOString().split('T')[0]}`);
+    const data = (products.data || []).map((p) => {
+      const unitPnl = p.selling_price - p.cost_price;
+      const margin = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
+      return {
+        Barcode: p.barcode,
+        Name: p.name,
+        Category: p.category,
+        Unit: p.unit,
+        'Cost Price (₹)': p.cost_price,
+        'Selling Price (₹)': p.selling_price,
+        'Unit Profit/Loss (₹)': unitPnl,
+        'Margin (%)': Math.round(margin),
+        'Shop Stock': p.stock_qty,
+        'Godown Stock': p.godown_qty,
+        'MOQ Alert': p.moq,
+        'Min Stock Alert': p.min_stock_alert,
+        'SKU Code': p.sku_code || p.barcode,
+        'GST Rate (%)': p.gst_rate,
+      };
+    });
+    ExcelEngine.exportToExcel(data, `Ponmani_Inventory_Catalog_PNL_${new Date().toISOString().split('T')[0]}`);
     toast.success("Inventory catalog exported to Excel");
   }
 
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Inventory & Stock Catalog"
-        subtitle={`${products.data?.length ?? 0} active products in local database`}
+        title="Inventory & Stock Catalog with P&L Analysis"
+        subtitle={`${products.data?.length ?? 0} active products in local database with per-product profit tracking`}
         action={
           <div className="flex gap-2">
             <button
@@ -105,6 +117,7 @@ function InventoryPage() {
                 <th className="text-left px-4 py-2.5">Category</th>
                 <th className="text-right px-4 py-2.5">Cost</th>
                 <th className="text-right px-4 py-2.5">Selling Price</th>
+                <th className="text-right px-4 py-2.5">Unit Profit / Loss</th>
                 <th className="text-right px-4 py-2.5">Shop Stock</th>
                 <th className="text-right px-4 py-2.5">Godown Stock</th>
                 <th className="text-right px-4 py-2.5">GST</th>
@@ -114,6 +127,10 @@ function InventoryPage() {
             <tbody className="divide-y divide-border">
               {products.data?.map((p) => {
                 const low = Number(p.stock_qty) <= Number(p.min_stock_alert) || Number(p.stock_qty) <= Number(p.moq);
+                const unitPnl = p.selling_price - p.cost_price;
+                const isProfit = unitPnl >= 0;
+                const marginPct = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
+
                 return (
                   <tr key={p.id} className="hover:bg-secondary/40 transition">
                     <td className="px-4 py-2.5 font-medium flex items-center gap-2">
@@ -129,12 +146,31 @@ function InventoryPage() {
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">{p.category}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{inr(p.cost_price)}</td>
                     <td className="px-4 py-2.5 text-right font-mono font-semibold text-primary">{inr(p.selling_price)}</td>
+
+                    {/* Unit Profit / Loss Column */}
+                    <td className="px-4 py-2.5 text-right font-mono">
+                      <div className={`font-bold text-xs flex items-center justify-end gap-1 ${isProfit ? "text-emerald-400" : "text-destructive"}`}>
+                        {isProfit ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {isProfit ? `+${inr(unitPnl)}` : inr(unitPnl)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {marginPct.toFixed(1)}% margin
+                      </div>
+                    </td>
+
                     <td className={`px-4 py-2.5 text-right font-mono font-bold ${low ? "text-amber-400" : "text-foreground"}`}>
                       {qty(p.stock_qty)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{qty(p.godown_qty)}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{p.gst_rate}%</td>
                     <td className="px-4 py-2.5 text-right space-x-1.5">
+                      <button
+                        onClick={() => setPnlDetailProduct(p)}
+                        title="View Detailed Product P&L"
+                        className="h-7 px-2 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 text-xs font-semibold border border-emerald-500/30 inline-flex items-center gap-1"
+                      >
+                        <DollarSign className="h-3 w-3" /> P&L
+                      </button>
                       <button
                         onClick={() => setPrintLabelProduct(p)}
                         title="Print Barcode Sticker Label"
@@ -155,7 +191,7 @@ function InventoryPage() {
               })}
               {products.data?.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-12 text-sm text-muted-foreground">
+                  <td colSpan={10} className="text-center py-12 text-sm text-muted-foreground">
                     No matching products in local database.
                   </td>
                 </tr>
@@ -186,6 +222,100 @@ function InventoryPage() {
           onClose={() => setPrintLabelProduct(null)}
         />
       )}
+
+      {pnlDetailProduct && (
+        <ProductPnlModal
+          product={pnlDetailProduct}
+          invoices={invoicesData.data || []}
+          onClose={() => setPnlDetailProduct(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProductPnlModal({ product, invoices, onClose }: { product: InventoryItem; invoices: any[]; onClose: () => void }) {
+  // Aggregate sales history for this product
+  let unitsSold = 0;
+  let totalRevenue = 0;
+
+  invoices.forEach(({ items }) => {
+    items.forEach((it: any) => {
+      if (it.product_id === product.id) {
+        unitsSold += Number(it.qty || 0);
+        totalRevenue += Number(it.total_price || 0);
+      }
+    });
+  });
+
+  const unitPnl = product.selling_price - product.cost_price;
+  const marginPct = product.selling_price > 0 ? (unitPnl / product.selling_price) * 100 : 0;
+  const totalCogs = unitsSold * product.cost_price;
+  const netRealizedProfit = totalRevenue - totalCogs;
+  const isProfitable = netRealizedProfit >= 0;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-5 border-l-4 border-l-emerald-500 space-y-4">
+        <div className="flex justify-between items-center pb-2 border-b border-border">
+          <div className="text-base font-bold text-foreground flex items-center gap-2">
+            <DollarSign className="h-5 w-5 text-emerald-400" /> Product P&L Analysis
+          </div>
+          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
+        </div>
+
+        <div>
+          <div className="text-lg font-bold text-foreground">{product.name}</div>
+          <div className="text-xs font-mono text-muted-foreground flex gap-3 mt-0.5">
+            <span>Barcode: {product.barcode}</span>
+            <span>SKU: {product.sku_code || product.barcode}</span>
+          </div>
+        </div>
+
+        {/* Key P&L Metrics Grid */}
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Cost Price (CP)</div>
+            <div className="text-base font-bold font-mono text-foreground">{inr(product.cost_price)}</div>
+          </div>
+          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Selling Price (SP)</div>
+            <div className="text-base font-bold font-mono text-primary">{inr(product.selling_price)}</div>
+          </div>
+          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Profit / Margin</div>
+            <div className={`text-base font-bold font-mono ${unitPnl >= 0 ? "text-emerald-400" : "text-destructive"}`}>
+              {unitPnl >= 0 ? `+${inr(unitPnl)}` : inr(unitPnl)} ({marginPct.toFixed(1)}%)
+            </div>
+          </div>
+          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
+            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Units Sold</div>
+            <div className="text-base font-bold font-mono text-foreground">{qty(unitsSold)} Units</div>
+          </div>
+        </div>
+
+        {/* Realized Sales Financials */}
+        <div className="p-4 bg-card rounded border border-border space-y-2 text-xs font-mono">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total Sales Revenue:</span>
+            <span className="font-bold text-foreground">{inr(totalRevenue)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Cost of Goods Sold (COGS):</span>
+            <span className="font-bold text-muted-foreground">-{inr(totalCogs)}</span>
+          </div>
+          <div className="pt-2 border-t border-border flex justify-between items-center text-sm font-sans font-bold">
+            <span className="text-muted-foreground">Net Realized P&L:</span>
+            <span className={`font-mono text-base ${isProfitable ? "text-emerald-400" : "text-destructive"}`}>
+              {isProfitable ? `+${inr(netRealizedProfit)}` : inr(netRealizedProfit)}
+            </span>
+          </div>
+        </div>
+
+        <button onClick={onClose} className="w-full h-9 rounded bg-secondary border border-border text-xs font-bold hover:bg-muted transition">
+          Close Analysis
+        </button>
+      </div>
     </div>
   );
 }
@@ -545,7 +675,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
         godown_qty: Number(r['Godown Qty'] || r['godown_qty']) || 0,
         moq: Number(r['MOQ'] || r['moq']) || 5,
         min_stock_alert: Number(r['Min Stock Alert'] || r['min_stock_alert']) || 10,
-        sku_code: r['SKU Code'] || r['sku_code'] || r['HSN Code'] || generatePmaBarcode(),
+        sku_code: r['SKU Code'] || r['sku_code'] || generatePmaBarcode(),
         gst_rate: Number(r['GST Rate (%)'] || r['gst_rate']) || 18,
       }));
       setParsedRows(mapped);

@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { FileSpreadsheet, LineChart as ChartIcon, BarChart3, PieChart as PieIcon, TrendingUp, Download } from "lucide-react";
+import { FileSpreadsheet, LineChart as ChartIcon, BarChart3, PieChart as PieIcon, TrendingUp, TrendingDown, Download, DollarSign } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/reports")({ component: ReportsPage });
@@ -25,7 +25,7 @@ type ReportType =
 const COLORS = ['oklch(0.72 0.16 160)', 'oklch(0.65 0.18 210)', 'oklch(0.78 0.15 75)', 'oklch(0.62 0.22 25)', 'oklch(0.68 0.15 300)'];
 
 function ReportsPage() {
-  const [activeReport, setActiveReport] = useState<ReportType>("daily_sales");
+  const [activeReport, setActiveReport] = useState<ReportType>("profit_margin");
 
   const reportData = useQuery({
     queryKey: ["local-reports-data", activeReport],
@@ -67,13 +67,37 @@ function ReportsPage() {
       }
 
       if (activeReport === "profit_margin") {
+        // Map per-product sales & profit details
+        const productSalesMap: Record<string, { unitsSold: number; revenue: number }> = {};
+        store.invoice_items.forEach((ii) => {
+          if (!productSalesMap[ii.product_id]) {
+            productSalesMap[ii.product_id] = { unitsSold: 0, revenue: 0 };
+          }
+          productSalesMap[ii.product_id].unitsSold += Number(ii.qty || 0);
+          productSalesMap[ii.product_id].revenue += Number(ii.total_price || 0);
+        });
+
         return store.inventory.map((p) => {
-          const margin = p.cost_price > 0 ? ((p.selling_price - p.cost_price) / p.selling_price) * 100 : 0;
+          const salesInfo = productSalesMap[p.id] || { unitsSold: 0, revenue: 0 };
+          const unitPnl = p.selling_price - p.cost_price;
+          const margin = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
+          const totalCogs = salesInfo.unitsSold * p.cost_price;
+          const netRealizedPnl = salesInfo.revenue - totalCogs;
+
           return {
-            label: p.name.length > 15 ? p.name.slice(0, 15) + "…" : p.name,
-            Cost: p.cost_price,
-            Selling: p.selling_price,
+            id: p.id,
+            label: p.name,
+            barcode: p.barcode,
+            sku_code: p.sku_code || p.barcode,
+            category: p.category,
+            CostPrice: p.cost_price,
+            SellingPrice: p.selling_price,
+            UnitPnl: unitPnl,
             MarginPercent: Math.round(margin),
+            UnitsSold: salesInfo.unitsSold,
+            TotalRevenue: salesInfo.revenue,
+            TotalCogs: totalCogs,
+            NetRealizedPnl: netRealizedPnl,
           };
         });
       }
@@ -130,7 +154,7 @@ function ReportsPage() {
 
   function exportActiveReportExcel() {
     const data = (reportData.data || []).map((row: any) => ({
-      'Metric / Item': row.label,
+      'Product / Item': row.label,
       ...row,
     }));
     ExcelEngine.exportToExcel(data, `Ponmani_Report_${activeReport}_${new Date().toISOString().split('T')[0]}`);
@@ -138,10 +162,10 @@ function ReportsPage() {
   }
 
   const REPORT_NAV: { id: ReportType; label: string }[] = [
-    { id: "daily_sales", label: "1. Daily Sales Trend" },
-    { id: "monthly_revenue", label: "2. Monthly Revenue" },
-    { id: "category_breakdown", label: "3. Category Breakdown" },
-    { id: "profit_margin", label: "4. Profit Margin Analysis" },
+    { id: "profit_margin", label: "1. Per-Product Profit & Loss (P&L)" },
+    { id: "daily_sales", label: "2. Daily Sales Trend" },
+    { id: "monthly_revenue", label: "3. Monthly Revenue" },
+    { id: "category_breakdown", label: "4. Category Breakdown" },
     { id: "stock_movement", label: "5. Stock Movement" },
     { id: "supplier_purchases", label: "6. Supplier Purchases" },
     { id: "customer_ledger", label: "7. Customer Ledger" },
@@ -153,7 +177,7 @@ function ReportsPage() {
     <div className="p-6 space-y-4">
       <PageHeader
         title="Reports & Analytics Dashboard"
-        subtitle="9 Comprehensive Business Intelligence Reports rendered locally with Recharts"
+        subtitle="Business Intelligence Reports with detailed product-wise Profit & Loss tracking"
         action={
           <button
             onClick={exportActiveReportExcel}
@@ -181,17 +205,18 @@ function ReportsPage() {
         ))}
       </div>
 
-      {/* Chart Display Area */}
+      {/* Main Report Display Card */}
       <div className="card-surface p-6 space-y-4">
         <div className="flex justify-between items-center pb-3 border-b border-border">
           <div className="text-sm font-bold text-foreground flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-primary" />
+            <DollarSign className="h-4 w-4 text-emerald-400" />
             {REPORT_NAV.find((r) => r.id === activeReport)?.label}
           </div>
-          <span className="text-xs text-muted-foreground font-mono">Real-time Local Recharts Engine</span>
+          <span className="text-xs text-muted-foreground font-mono">Real-time Local Analytics Engine</span>
         </div>
 
-        <div className="h-80 w-full pt-4">
+        {/* Chart View */}
+        <div className="h-72 w-full pt-2">
           <ResponsiveContainer width="100%" height="100%">
             {activeReport === "category_breakdown" ? (
               <PieChart>
@@ -216,36 +241,101 @@ function ReportsPage() {
                 <XAxis dataKey="label" stroke="oklch(0.65 0.015 240)" fontSize={11} />
                 <YAxis stroke="oklch(0.65 0.015 240)" fontSize={11} />
                 <Tooltip contentStyle={{ background: "oklch(0.20 0.012 240)", border: "1px solid oklch(0.28 0.012 240)", borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey={Object.keys((reportData.data || [])[0] || {}).find((k) => k !== 'label') || 'value'} fill="oklch(0.72 0.16 160)" radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey={activeReport === "profit_margin" ? "UnitPnl" : (Object.keys((reportData.data || [])[0] || {}).find((k) => k !== 'label' && k !== 'id') || 'value')}
+                  fill="oklch(0.72 0.16 160)"
+                  radius={[4, 4, 0, 0]}
+                />
               </BarChart>
             )}
           </ResponsiveContainer>
         </div>
 
-        {/* Data Table Breakdown */}
-        <div className="pt-4 border-t border-border">
-          <div className="text-xs font-bold text-muted-foreground uppercase mb-2">Report Data Table Summary</div>
-          <div className="max-h-48 overflow-auto border border-border rounded">
-            <table className="w-full text-xs">
-              <thead className="bg-card text-[10px] uppercase text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="px-3 py-2 text-left">Label / Category</th>
-                  <th className="px-3 py-2 text-right">Value / Metric</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border font-mono">
-                {(reportData.data || []).map((row: any, i: number) => (
-                  <tr key={i}>
-                    <td className="px-3 py-1.5 font-sans font-medium">{row.label}</td>
-                    <td className="px-3 py-1.5 text-right font-bold text-primary">
-                      {JSON.stringify(row).replace(/[{}"label]/g, '')}
-                    </td>
+        {/* Detailed Per-Product Profit & Loss Table */}
+        {activeReport === "profit_margin" ? (
+          <div className="pt-4 border-t border-border space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <TrendingUp className="h-4 w-4 text-emerald-400" /> Per-Product Profit & Loss (P&L) Ledger
+              </div>
+              <span className="text-xs text-muted-foreground font-mono">
+                {reportData.data?.length ?? 0} Products Analyzed
+              </span>
+            </div>
+
+            <div className="max-h-80 overflow-auto border border-border rounded">
+              <table className="w-full text-xs">
+                <thead className="bg-card text-[10px] uppercase text-muted-foreground sticky top-0 border-b border-border">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Product Name</th>
+                    <th className="px-3 py-2 text-left">Barcode / SKU</th>
+                    <th className="px-3 py-2 text-left">Category</th>
+                    <th className="px-3 py-2 text-right">Cost (₹)</th>
+                    <th className="px-3 py-2 text-right">Selling (₹)</th>
+                    <th className="px-3 py-2 text-right">Unit Profit / Loss</th>
+                    <th className="px-3 py-2 text-right">Margin %</th>
+                    <th className="px-3 py-2 text-right">Units Sold</th>
+                    <th className="px-3 py-2 text-right">Net Realized P&L</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border font-mono">
+                  {(reportData.data || []).map((row: any, i: number) => {
+                    const isProfit = row.UnitPnl >= 0;
+                    const isRealizedProfit = row.NetRealizedPnl >= 0;
+                    return (
+                      <tr key={i} className="hover:bg-secondary/40 transition">
+                        <td className="px-3 py-2 font-sans font-semibold text-foreground">{row.label}</td>
+                        <td className="px-3 py-2 text-muted-foreground text-[11px]">{row.barcode}</td>
+                        <td className="px-3 py-2 font-sans text-muted-foreground">{row.category}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{inr(row.CostPrice)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-primary">{inr(row.SellingPrice)}</td>
+                        <td className={`px-3 py-2 text-right font-bold ${isProfit ? "text-emerald-400" : "text-destructive"}`}>
+                          {isProfit ? `+${inr(row.UnitPnl)}` : inr(row.UnitPnl)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{row.MarginPercent}%</td>
+                        <td className="px-3 py-2 text-right font-bold text-foreground">{qty(row.UnitsSold)}</td>
+                        <td className={`px-3 py-2 text-right font-bold ${isRealizedProfit ? "text-emerald-400" : "text-destructive"}`}>
+                          {isRealizedProfit ? `+${inr(row.NetRealizedPnl)}` : inr(row.NetRealizedPnl)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {(!reportData.data || reportData.data.length === 0) && (
+                    <tr>
+                      <td colSpan={9} className="text-center py-8 text-muted-foreground">
+                        No products available for P&L analysis.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="pt-4 border-t border-border">
+            <div className="text-xs font-bold text-muted-foreground uppercase mb-2">Report Data Table Summary</div>
+            <div className="max-h-48 overflow-auto border border-border rounded">
+              <table className="w-full text-xs">
+                <thead className="bg-card text-[10px] uppercase text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="px-3 py-2 text-left">Label / Category</th>
+                    <th className="px-3 py-2 text-right">Value / Metric</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border font-mono">
+                  {(reportData.data || []).map((row: any, i: number) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2 font-sans font-medium">{row.label}</td>
+                      <td className="px-3 py-2 text-right font-bold text-primary">
+                        {JSON.stringify(row).replace(/[{}"label]/g, '')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
