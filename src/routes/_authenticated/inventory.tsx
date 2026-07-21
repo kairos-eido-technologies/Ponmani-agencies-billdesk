@@ -198,16 +198,16 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
   const [f, setF] = useState<Partial<InventoryItem>>({
     name: product?.name ?? "",
     barcode: product?.barcode ?? generatePmaBarcode(),
-    category: product?.category ?? "Electricals",
+    category: product?.category ?? "",
     unit: product?.unit ?? "Piece",
-    cost_price: product?.cost_price ?? 0,
-    selling_price: product?.selling_price ?? 0,
-    stock_qty: product?.stock_qty ?? 0,
-    godown_qty: product?.godown_qty ?? 0,
-    moq: product?.moq ?? 5,
-    min_stock_alert: product?.min_stock_alert ?? 10,
-    sku_code: product?.sku_code ?? product?.barcode ?? generatePmaBarcode(),
-    gst_rate: product?.gst_rate ?? 18,
+    cost_price: product?.cost_price,
+    selling_price: product?.selling_price,
+    stock_qty: product?.stock_qty,
+    godown_qty: product?.godown_qty,
+    moq: product?.moq,
+    min_stock_alert: product?.min_stock_alert,
+    sku_code: product?.sku_code ?? product?.barcode ?? "",
+    gst_rate: product?.gst_rate,
     image_path: product?.image_path ?? "",
   });
 
@@ -216,6 +216,13 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
     if (!f.name?.trim()) { toast.error("Product name required"); return; }
     db.saveInventoryItem({
       ...f,
+      cost_price: f.cost_price ?? 0,
+      selling_price: f.selling_price ?? 0,
+      stock_qty: f.stock_qty ?? 0,
+      godown_qty: f.godown_qty ?? 0,
+      moq: f.moq ?? 5,
+      min_stock_alert: f.min_stock_alert ?? 10,
+      gst_rate: f.gst_rate ?? 18,
       id: product?.id,
       barcode: f.barcode || generatePmaBarcode(),
       sku_code: f.sku_code || f.barcode || generatePmaBarcode(),
@@ -255,6 +262,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                 required
                 value={f.name}
                 onChange={(e) => setF({ ...f, name: e.target.value })}
+                placeholder="e.g. Steel plates / Copper wire"
                 className={ic}
                 autoFocus
               />
@@ -291,6 +299,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <input
                 value={f.category}
                 onChange={(e) => setF({ ...f, category: e.target.value })}
+                placeholder="e.g. Vessals / Electricals"
                 className={ic}
               />
             </label>
@@ -302,8 +311,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <input
                 type="number"
                 step="0.01"
-                value={f.cost_price}
-                onChange={(e) => setF({ ...f, cost_price: parseFloat(e.target.value) || 0 })}
+                value={f.cost_price ?? ""}
+                onChange={(e) => setF({ ...f, cost_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="0.00"
                 className={ic}
               />
             </label>
@@ -316,8 +326,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                 required
                 type="number"
                 step="0.01"
-                value={f.selling_price}
-                onChange={(e) => setF({ ...f, selling_price: parseFloat(e.target.value) || 0 })}
+                value={f.selling_price ?? ""}
+                onChange={(e) => setF({ ...f, selling_price: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="0.00"
                 className={ic}
               />
             </label>
@@ -328,8 +339,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty</div>
               <input
                 type="number"
-                value={f.stock_qty}
-                onChange={(e) => setF({ ...f, stock_qty: parseFloat(e.target.value) || 0 })}
+                value={f.stock_qty ?? ""}
+                onChange={(e) => setF({ ...f, stock_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="0"
                 className={ic}
               />
             </label>
@@ -340,8 +352,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty</div>
               <input
                 type="number"
-                value={f.godown_qty}
-                onChange={(e) => setF({ ...f, godown_qty: parseFloat(e.target.value) || 0 })}
+                value={f.godown_qty ?? ""}
+                onChange={(e) => setF({ ...f, godown_qty: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="0"
                 className={ic}
               />
             </label>
@@ -352,8 +365,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">MOQ Reorder Alert</div>
               <input
                 type="number"
-                value={f.moq}
-                onChange={(e) => setF({ ...f, moq: parseFloat(e.target.value) || 0 })}
+                value={f.moq ?? ""}
+                onChange={(e) => setF({ ...f, moq: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="5"
                 className={ic}
               />
             </label>
@@ -364,8 +378,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Min Stock Alert</div>
               <input
                 type="number"
-                value={f.min_stock_alert}
-                onChange={(e) => setF({ ...f, min_stock_alert: parseFloat(e.target.value) || 0 })}
+                value={f.min_stock_alert ?? ""}
+                onChange={(e) => setF({ ...f, min_stock_alert: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="10"
                 className={ic}
               />
             </label>
@@ -377,7 +392,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <input
                 value={f.sku_code}
                 onChange={(e) => setF({ ...f, sku_code: e.target.value })}
-                placeholder="SKU-1001"
+                placeholder="Auto-generated SKU"
                 className={ic}
               />
             </label>
@@ -388,8 +403,9 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
               <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">GST Rate (%)</div>
               <input
                 type="number"
-                value={f.gst_rate}
-                onChange={(e) => setF({ ...f, gst_rate: parseFloat(e.target.value) || 0 })}
+                value={f.gst_rate ?? ""}
+                onChange={(e) => setF({ ...f, gst_rate: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                placeholder="18"
                 className={ic}
               />
             </label>
