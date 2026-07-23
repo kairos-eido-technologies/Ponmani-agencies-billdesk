@@ -198,9 +198,9 @@ function InventoryPage() {
                 <th className="text-left px-2.5 py-2.5">Product Name</th>
                 <th className="text-left px-2 py-2.5">Barcode / SKU</th>
                 <th className="text-left px-2 py-2.5">Category</th>
-                <th className="text-right px-2 py-2.5">Cost (₹)</th>
-                <th className="text-right px-2 py-2.5">Selling (₹)</th>
-                <th className="text-right px-2 py-2.5">Unit P&L</th>
+                <th className="text-right px-2 py-2.5">Cost (CP)</th>
+                <th className="text-right px-2 py-2.5">Selling (SP)</th>
+                <th className="text-right px-2 py-2.5 font-bold text-blue-400">Investment Recovery P&L</th>
                 <th className="text-right px-2 py-2.5">Shop Stock</th>
                 <th className="text-right px-2 py-2.5">Godown Stock</th>
                 <th className="text-right px-2 py-2.5">Total Stock</th>
@@ -214,9 +214,28 @@ function InventoryPage() {
                 const totalStock = shopQty + godownQty;
                 const low = shopQty <= Number(p.min_stock_alert) || shopQty <= Number(p.moq);
                 const unitPnl = p.selling_price - p.cost_price;
-                const isProfit = unitPnl >= 0;
                 const marginPct = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
                 const unitLabel = p.unit ? p.unit.split(' ')[0] : 'Pcs';
+
+                // Calculate current realized sales and profit for this product
+                let unitsSold = 0;
+                let totalRevenue = 0;
+                invoicesData.data?.forEach((inv) => {
+                  inv.items?.forEach((it: any) => {
+                    if (it.product_id === p.id) {
+                      unitsSold += Number(it.qty || 0);
+                      totalRevenue += Number(it.total_price || 0);
+                    }
+                  });
+                });
+                const totalCogs = unitsSold * p.cost_price;
+                const netRealizedProfit = totalRevenue - totalCogs;
+                
+                // Investment recovery cash flow calculations
+                const totalPurchasedQty = totalStock + unitsSold;
+                const totalInvestment = totalPurchasedQty * p.cost_price;
+                const cashFlowPnl = totalRevenue - totalInvestment;
+                const isRecovered = cashFlowPnl >= 0;
 
                 return (
                   <tr key={p.id} className="hover:bg-secondary/40 transition">
@@ -237,16 +256,39 @@ function InventoryPage() {
                     </td>
                     <td className="px-2 py-2 text-xs text-muted-foreground truncate max-w-[90px]">{p.category}</td>
                     <td className="px-2 py-2 text-right font-mono text-muted-foreground">{inr(p.cost_price)}</td>
-                    <td className="px-2 py-2 text-right font-mono font-semibold text-primary">{inr(p.selling_price)}</td>
-
-                    {/* Unit Profit / Loss Column */}
                     <td className="px-2 py-2 text-right font-mono">
-                      <div className={`font-bold text-xs flex items-center justify-end gap-0.5 ${isProfit ? "text-emerald-400" : "text-destructive"}`}>
-                        {isProfit ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                        {isProfit ? `+${inr(unitPnl)}` : inr(unitPnl)}
-                      </div>
+                      <div className="font-semibold text-primary">{inr(p.selling_price)}</div>
                       <div className="text-[10px] text-muted-foreground">
-                        {marginPct.toFixed(1)}% margin
+                        {marginPct.toFixed(0)}% margin
+                      </div>
+                    </td>
+
+                    {/* Current realized profit/loss and total units sold column */}
+                    <td className="px-2 py-2 text-right font-mono">
+                      <div className={`font-bold text-xs flex items-center justify-end gap-0.5 ${
+                        unitsSold === 0
+                          ? "text-muted-foreground"
+                          : isRecovered
+                            ? "text-emerald-400"
+                            : "text-amber-500"
+                      }`}>
+                        {unitsSold > 0 ? (
+                          <>
+                            {isRecovered ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                            {isRecovered ? `+${inr(cashFlowPnl)}` : inr(cashFlowPnl)}
+                          </>
+                        ) : (
+                          `-${inr(totalInvestment)}`
+                        )}
+                      </div>
+                      <div className="text-[9px] text-muted-foreground">
+                        {unitsSold > 0 ? (
+                          <span className="text-emerald-400/80">
+                            Markup: +{inr(netRealizedProfit)} ({qty(unitsSold)} sold)
+                          </span>
+                        ) : (
+                          "0 pcs sold"
+                        )}
                       </div>
                     </td>
 
@@ -366,14 +408,22 @@ function ProductPnlModal({ product, invoices, onClose }: { product: InventoryIte
 
   const totalCogs = unitsSold * product.cost_price;
   const netRealizedProfit = totalRevenue - totalCogs;
-  const isProfitable = netRealizedProfit >= 0;
+  
+  // Investment recovery cash flow calculations
+  const totalPurchasedQty = totalStock + unitsSold;
+  const totalInvestment = totalPurchasedQty * product.cost_price;
+  const cashFlowPnl = totalRevenue - totalInvestment;
+  const isCashFlowProfitable = cashFlowPnl >= 0;
+  
+  const breakEvenQty = product.selling_price > 0 ? Math.ceil(totalInvestment / product.selling_price) : 0;
+  const remainingToBreakEven = Math.max(0, breakEvenQty - unitsSold);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-emerald-500 space-y-4 max-h-[90vh] overflow-auto">
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-emerald-500 space-y-5 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center pb-2 border-b border-border">
           <div className="text-base font-bold text-foreground flex items-center gap-2">
-            <DollarSign className="h-5 w-5 text-emerald-400" /> Full Product Stock P&L Analysis
+            <DollarSign className="h-5 w-5 text-emerald-400" /> Product P&L & Sales Analysis
           </div>
           <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
         </div>
@@ -387,68 +437,143 @@ function ProductPnlModal({ product, invoices, onClose }: { product: InventoryIte
           </div>
         </div>
 
-        {/* Stock Breakdown */}
-        <div className="p-3 bg-card rounded border border-border grid grid-cols-3 gap-2 text-center text-xs font-mono">
-          <div>
-            <div className="text-[10px] uppercase text-muted-foreground font-sans font-bold">Shop Stock</div>
-            <div className="font-bold text-foreground mt-0.5">{qty(shopQty)} {product.unit || 'pcs'}</div>
+        {/* CURRENT SALES & P&L STATUS (PRIMARY FOCUS) */}
+        <div className={`p-4 rounded border-2 space-y-3 ${
+          unitsSold === 0
+            ? "bg-secondary/20 border-border"
+            : isCashFlowProfitable
+              ? "bg-emerald-500/10 border-emerald-500/30"
+              : "bg-amber-500/10 border-amber-500/30"
+        }`}>
+          <div className="flex justify-between items-center">
+            <span className="font-bold text-[10px] uppercase tracking-wider font-sans text-foreground">Cash Flow (Investment Recovery):</span>
+            {unitsSold === 0 ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-bold bg-secondary text-muted-foreground border border-border">
+                NO SALES (UNRECOVERED)
+              </span>
+            ) : isCashFlowProfitable ? (
+              <span className="inline-flex items-center px-3 py-1 rounded text-xs font-bold bg-emerald-500 text-black border border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]">
+                INVESTMENT RECOVERED
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-3 py-1 rounded text-xs font-bold bg-amber-500 text-black border border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.3)]">
+                STILL IN BATCH LOSS
+              </span>
+            )}
           </div>
-          <div>
-            <div className="text-[10px] uppercase text-muted-foreground font-sans font-bold">Godown Stock</div>
-            <div className="font-bold text-muted-foreground mt-0.5">{qty(godownQty)} {product.unit || 'pcs'}</div>
+
+          <div className="grid grid-cols-2 gap-4 text-xs font-mono pt-1">
+            <div className="p-3 bg-card rounded border border-border space-y-1">
+              <div className="text-[10px] uppercase text-muted-foreground font-bold">Total Batch Cost (CP * Total Supplied)</div>
+              <div className="text-base font-bold text-foreground">{inr(totalInvestment)}</div>
+              <div className="text-[9px] text-muted-foreground font-sans">
+                Supplied: {qty(totalPurchasedQty)} {product.unit || 'pcs'}
+              </div>
+            </div>
+            <div className="p-3 bg-card rounded border border-border space-y-1">
+              <div className="text-[10px] uppercase text-muted-foreground font-bold font-sans">Net Cash Flow P&L</div>
+              <div className={`text-base font-bold ${
+                unitsSold === 0
+                  ? "text-muted-foreground"
+                  : isCashFlowProfitable
+                    ? "text-emerald-400"
+                    : "text-amber-400"
+              }`}>
+                {unitsSold > 0 ? (isCashFlowProfitable ? `+${inr(cashFlowPnl)}` : inr(cashFlowPnl)) : `-${inr(totalInvestment)}`}
+              </div>
+              <div className="text-[9px] text-muted-foreground font-sans">
+                {isCashFlowProfitable ? "Fully Break Even!" : `Unrecovered: ${inr(Math.abs(cashFlowPnl))}`}
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="text-[10px] uppercase text-blue-400 font-sans font-bold">Total Stock</div>
-            <div className="font-bold text-blue-400 mt-0.5">{qty(totalStock)} {product.unit || 'pcs'}</div>
+
+          <div className="space-y-1.5 text-xs font-mono pt-2 border-t border-border">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground font-sans">Realized Revenue ({qty(unitsSold)} sold):</span>
+              <span className="font-semibold text-foreground">{inr(totalRevenue)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground font-sans">Realized COGS Cost:</span>
+              <span className="font-semibold text-muted-foreground">-{inr(totalCogs)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground font-sans">Sales Markup Profit (Net Margin):</span>
+              <span className={`font-semibold ${netRealizedProfit >= 0 ? "text-emerald-400" : "text-destructive"}`}>
+                {netRealizedProfit >= 0 ? `+${inr(netRealizedProfit)}` : inr(netRealizedProfit)}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Unit & Total Stock Financial Matrix */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Cost (CP)</div>
-            <div className="text-sm font-bold font-mono text-foreground">{inr(product.cost_price)}</div>
+        {/* BATCH BREAK-EVEN METRICS */}
+        {unitsSold > 0 && !isCashFlowProfitable && (
+          <div className="p-4 rounded border border-blue-500/20 bg-blue-500/5 space-y-2">
+            <div className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">
+              Batch Break-Even Target Analysis
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="space-y-0.5">
+                <div className="text-[9px] text-muted-foreground uppercase font-sans">Break-Even Sales Target</div>
+                <div className="font-bold text-foreground">{qty(breakEvenQty)} {product.unit || 'pcs'}</div>
+              </div>
+              <div className="space-y-0.5">
+                <div className="text-[9px] text-muted-foreground uppercase font-sans">Remaining Pcs to Sell</div>
+                <div className="font-bold text-blue-400">{qty(remainingToBreakEven)} {product.unit || 'pcs'}</div>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground italic mt-1 font-sans">
+              To fully recover the initial batch cost of {inr(totalInvestment)}, you must sell at least {qty(remainingToBreakEven)} more units.
+            </p>
           </div>
-          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Selling (SP)</div>
-            <div className="text-sm font-bold font-mono text-primary">{inr(product.selling_price)}</div>
-          </div>
-          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Cost (CP Total)</div>
-            <div className="text-sm font-bold font-mono text-foreground">{inr(totalStockCostValuation)}</div>
-          </div>
-          <div className="p-3 bg-secondary/50 rounded border border-border space-y-0.5">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Selling (SP Total)</div>
-            <div className="text-sm font-bold font-mono text-primary">{inr(totalStockSellingValuation)}</div>
-          </div>
-        </div>
+        )}
 
-        {/* Total Projected Stock P&L */}
-        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded flex justify-between items-center text-xs font-mono">
-          <span className="font-bold text-emerald-400">Total Projected Stock Margin (If All Sold):</span>
-          <span className={`font-bold text-base ${totalStockPotentialProfit >= 0 ? "text-emerald-400" : "text-destructive"}`}>
-            {totalStockPotentialProfit >= 0 ? `+${inr(totalStockPotentialProfit)}` : inr(totalStockPotentialProfit)} ({marginPct.toFixed(1)}%)
-          </span>
-        </div>
+        {/* STOCK VALUATION & PROJECTIONS (SECONDARY SEGMENT) */}
+        <div className="space-y-3 pt-2 border-t border-border">
+          <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+            Stock Valuation & Projection Analysis
+          </div>
 
-        {/* Realized Sales Financials */}
-        <div className="p-4 bg-card rounded border border-border space-y-2 text-xs font-mono">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Total Units Sold to Date:</span>
-            <span className="font-bold text-foreground">{qty(unitsSold)} {product.unit || 'pcs'}</span>
+          {/* Stock Breakdown */}
+          <div className="p-3 bg-card rounded border border-border grid grid-cols-3 gap-2 text-center text-xs font-mono">
+            <div>
+              <div className="text-[10px] uppercase text-muted-foreground font-sans font-bold">Shop Stock</div>
+              <div className="font-bold text-foreground mt-0.5">{qty(shopQty)} {product.unit || 'pcs'}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-muted-foreground font-sans font-bold">Godown Stock</div>
+              <div className="font-bold text-muted-foreground mt-0.5">{qty(godownQty)} {product.unit || 'pcs'}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase text-blue-400 font-sans font-bold">Total Stock</div>
+              <div className="font-bold text-blue-400 mt-0.5">{qty(totalStock)} {product.unit || 'pcs'}</div>
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Realized Sales Revenue:</span>
-            <span className="font-bold text-foreground">{inr(totalRevenue)}</span>
+
+          {/* Unit & Total Stock Financial Matrix */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 bg-secondary/30 rounded border border-border space-y-0.5">
+              <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Cost (CP)</div>
+              <div className="text-sm font-bold font-mono text-foreground">{inr(product.cost_price)}</div>
+            </div>
+            <div className="p-3 bg-secondary/30 rounded border border-border space-y-0.5">
+              <div className="text-[10px] uppercase font-bold text-muted-foreground">Unit Selling (SP)</div>
+              <div className="text-sm font-bold font-mono text-primary">{inr(product.selling_price)}</div>
+            </div>
+            <div className="p-3 bg-secondary/30 rounded border border-border space-y-0.5">
+              <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Cost</div>
+              <div className="text-sm font-bold font-mono text-foreground">{inr(totalStockCostValuation)}</div>
+            </div>
+            <div className="p-3 bg-secondary/30 rounded border border-border space-y-0.5">
+              <div className="text-[10px] uppercase font-bold text-muted-foreground">Total Stock Selling</div>
+              <div className="text-sm font-bold font-mono text-primary">{inr(totalStockSellingValuation)}</div>
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Realized Cost of Goods Sold (COGS):</span>
-            <span className="font-bold text-muted-foreground">-{inr(totalCogs)}</span>
-          </div>
-          <div className="pt-2 border-t border-border flex justify-between items-center text-sm font-sans font-bold">
-            <span className="text-muted-foreground">Net Realized Profit:</span>
-            <span className={`font-mono text-base ${isProfitable ? "text-emerald-400" : "text-destructive"}`}>
-              {isProfitable ? `+${inr(netRealizedProfit)}` : inr(netRealizedProfit)}
+
+          {/* Projected margin (If All Sold) */}
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded flex justify-between items-center text-xs font-mono">
+            <span className="font-bold text-emerald-400 font-sans text-[11px]">Projected Stock Profit (If All Sold):</span>
+            <span className={`font-bold text-sm ${totalStockPotentialProfit >= 0 ? "text-emerald-400" : "text-destructive"}`}>
+              {totalStockPotentialProfit >= 0 ? `+${inr(totalStockPotentialProfit)}` : inr(totalStockPotentialProfit)} ({marginPct.toFixed(1)}%)
             </span>
           </div>
         </div>

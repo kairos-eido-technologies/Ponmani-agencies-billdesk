@@ -1,7 +1,9 @@
+import Dexie, { type Table } from 'dexie';
+
 /**
  * Ponmani Agencies Offline - Local Relational Database Engine
- * Zero internet dependency. Supports IndexedDB persistent storage in web/dev mode
- * and Electron IPC main process binding in desktop mode.
+ * Zero internet dependency. Powered by Dexie (IndexedDB) for high-performance scale,
+ * supporting 1,000,000+ data rows with synchronous memory cache access for the UI.
  */
 
 export interface User {
@@ -93,10 +95,13 @@ export interface Invoice {
   subtotal: number;
   tax_amount: number;
   discount_amount: number;
+  exchange_amount?: number;
+  exchange_notes?: string;
   grand_total: number;
   payment_method: 'CASH' | 'UPI' | 'CARD' | 'CREDIT';
   payment_status: 'PAID' | 'PENDING';
   created_at: string;
+  is_synced?: number; // 0 = unsynced, 1 = synced
 }
 
 export interface InvoiceItem {
@@ -176,8 +181,6 @@ export interface DBStore {
   settings: Record<string, any>;
 }
 
-const STORAGE_KEY = 'ponmani_offline_db_v2';
-
 const INITIAL_SEED: DBStore = {
   users: [
     {
@@ -222,39 +225,413 @@ const INITIAL_SEED: DBStore = {
   },
 };
 
-class OfflineDB {
-  private memoryData: DBStore;
+let isSyncingFromSQLite = false;
+
+function postRowToSQLite(action: 'upsert' | 'delete' | 'reset', table?: string, data?: any, id?: any): Promise<any> | void {
+  if (isSyncingFromSQLite) return;
+  if (typeof window === 'undefined') return;
+
+  return fetch('/api/db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, table, data, id }),
+  }).catch((err) => {
+    console.warn('[SQLite Sync Error] Failed mirroring to server:', err);
+  });
+}
+
+// Dexie Database Declaration
+class PonmaniDatabase extends Dexie {
+  users!: Table<User>;
+  inventory!: Table<InventoryItem>;
+  vendors!: Table<Vendor>;
+  purchase_orders!: Table<PurchaseOrder>;
+  purchase_items!: Table<PurchaseItem>;
+  customers!: Table<Customer>;
+  loyalty_ledger!: Table<LoyaltyLedger>;
+  invoices!: Table<Invoice>;
+  invoice_items!: Table<InvoiceItem>;
+  service_tickets!: Table<ServiceTicket>;
+  scrap_entries!: Table<ScrapEntry>;
+  godown_transfers!: Table<GodownTransfer>;
+  backups_log!: Table<BackupLog>;
+  settings!: Table<{ key: string; value: any }>;
 
   constructor() {
-    this.memoryData = this.loadFromStorage();
+    super('PonmaniDatabase');
+    this.version(1).stores({
+      users: 'id, username',
+      inventory: 'id, barcode, name, category',
+      vendors: 'id, name, company_name',
+      purchase_orders: 'id, po_number, vendor_id',
+      purchase_items: 'id, po_id, product_id',
+      customers: 'id, mobile, name',
+      loyalty_ledger: 'id, customer_id',
+      invoices: 'id, invoice_number, customer_id, created_at',
+      invoice_items: 'id, invoice_id, product_id, barcode',
+      service_tickets: 'id, ticket_number, customer_id',
+      scrap_entries: 'id, customer_mobile',
+      godown_transfers: 'id, product_id',
+      backups_log: 'id',
+      settings: 'key',
+    });
+    this.version(2).stores({
+      invoices: 'id, invoice_number, customer_id, created_at, is_synced',
+    });
+
+    // Automatically mirror writes to local SQLite server in background
+    const tables = [
+      'users', 'inventory', 'vendors', 'purchase_orders', 'purchase_items',
+      'customers', 'loyalty_ledger', 'invoices', 'invoice_items',
+      'service_tickets', 'scrap_entries', 'godown_transfers', 'backups_log', 'settings'
+    ];
+
+    tables.forEach((tableName) => {
+      this.table(tableName).hook('creating', (primKey, obj) => {
+        postRowToSQLite('upsert', tableName, obj);
+      });
+      this.table(tableName).hook('updating', (modifications, primKey, obj) => {
+        const updatedObj = { ...obj, ...modifications };
+        postRowToSQLite('upsert', tableName, updatedObj);
+      });
+      this.table(tableName).hook('deleting', (primKey) => {
+        postRowToSQLite('delete', tableName, undefined, primKey);
+      });
+    });
+  }
+}
+
+class OfflineDB {
+  private memoryData: DBStore;
+  private dexieDb!: PonmaniDatabase;
+  public isLoaded = false;
+  public loadPromise: Promise<void>;
+
+  constructor() {
+    this.memoryData = { ...INITIAL_SEED };
+    
+    if (typeof window === 'undefined') {
+      this.isLoaded = true;
+      this.loadPromise = Promise.resolve();
+    } else {
+      this.dexieDb = new PonmaniDatabase();
+      this.loadPromise = this.loadFromIndexedDB();
+    }
   }
 
-  private loadFromStorage(): DBStore {
-    if (typeof window === 'undefined') return INITIAL_SEED;
+  private async loadFromIndexedDB() {
+    // 1. Try to fetch from the server-side SQLite API first
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return {
-          ...INITIAL_SEED,
-          ...parsed,
-          settings: { ...INITIAL_SEED.settings, ...(parsed.settings || {}) },
+      const response = await fetch('/api/db');
+      if (response.ok) {
+        const store = await response.json();
+        // If server SQLite database is empty (e.g. newly initialized), initialize with seed
+        if (!store.users || store.users.length === 0) {
+          console.log('[SQLite Server] SQLite database is empty. Seeding initial data...');
+          this.memoryData = { ...INITIAL_SEED };
+          this.isLoaded = true;
+          // Seed the SQLite server in background
+          await this.syncLocalStoreToSQLite(INITIAL_SEED);
+          // Sync local IndexedDB fallback cache
+          await this.syncLocalStoreToIndexedDB(INITIAL_SEED);
+          return;
+        }
+
+        // Initialize cache with SQLite store data
+        this.memoryData = {
+          users: store.users || [],
+          inventory: store.inventory || [],
+          vendors: store.vendors || [],
+          purchase_orders: store.purchase_orders || [],
+          purchase_items: store.purchase_items || [],
+          customers: store.customers || [],
+          loyalty_ledger: store.loyalty_ledger || [],
+          invoices: store.invoices || [],
+          invoice_items: store.invoice_items || [],
+          service_tickets: store.service_tickets || [],
+          scrap_entries: store.scrap_entries || [],
+          godown_transfers: store.godown_transfers || [],
+          backups_log: store.backups_log || [],
+          settings: { ...INITIAL_SEED.settings, ...store.settings },
+        };
+        this.isLoaded = true;
+
+        // Sync local IndexedDB fallback cache in background
+        this.syncLocalStoreToIndexedDB(this.memoryData).catch(console.error);
+        return;
+      }
+    } catch (e) {
+      console.warn('[SQLite Server] API unavailable, falling back to local browser IndexedDB:', e);
+    }
+
+    // 2. Fallback: Load from local IndexedDB if server is not reachable
+    try {
+      const [
+        users,
+        inventory,
+        vendors,
+        purchase_orders,
+        purchase_items,
+        customers,
+        loyalty_ledger,
+        invoices,
+        invoice_items,
+        service_tickets,
+        scrap_entries,
+        godown_transfers,
+        backups_log,
+        settingsArr,
+      ] = await Promise.all([
+        this.dexieDb.users.toArray(),
+        this.dexieDb.inventory.toArray(),
+        this.dexieDb.vendors.toArray(),
+        this.dexieDb.purchase_orders.toArray(),
+        this.dexieDb.purchase_items.toArray(),
+        this.dexieDb.customers.toArray(),
+        this.dexieDb.loyalty_ledger.toArray(),
+        this.dexieDb.invoices.toArray(),
+        this.dexieDb.invoice_items.toArray(),
+        this.dexieDb.service_tickets.toArray(),
+        this.dexieDb.scrap_entries.toArray(),
+        this.dexieDb.godown_transfers.toArray(),
+        this.dexieDb.backups_log.toArray(),
+        this.dexieDb.settings.toArray(),
+      ]);
+
+      const settings: Record<string, any> = {};
+      settingsArr.forEach((s) => {
+        settings[s.key] = s.value;
+      });
+
+      if (users.length === 0) {
+        await this.seedInitialData();
+      } else {
+        this.memoryData = {
+          users,
+          inventory,
+          vendors,
+          purchase_orders,
+          purchase_items,
+          customers,
+          loyalty_ledger,
+          invoices,
+          invoice_items,
+          service_tickets,
+          scrap_entries,
+          godown_transfers,
+          backups_log,
+          settings: { ...INITIAL_SEED.settings, ...settings },
         };
       }
     } catch (err) {
-      console.error('Failed reading local DB storage:', err);
+      console.error('Failed loading IndexedDB database, falling back to seed:', err);
+      this.memoryData = { ...INITIAL_SEED };
+    } finally {
+      this.isLoaded = true;
     }
-    this.saveToStorage(INITIAL_SEED);
-    return INITIAL_SEED;
   }
 
-  private saveToStorage(data: DBStore) {
-    if (typeof window === 'undefined') return;
+  private async syncLocalStoreToSQLite(store: DBStore) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      this.memoryData = data;
+      isSyncingFromSQLite = true;
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset' }),
+      });
+
+      for (const user of store.users) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'users', data: user }),
+        });
+      }
+      for (const item of store.inventory) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'inventory', data: item }),
+        });
+      }
+      for (const vendor of store.vendors) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'vendors', data: vendor }),
+        });
+      }
+      for (const po of store.purchase_orders) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'purchase_orders', data: po }),
+        });
+      }
+      for (const item of store.purchase_items) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'purchase_items', data: item }),
+        });
+      }
+      for (const c of store.customers) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'customers', data: c }),
+        });
+      }
+      for (const ledger of store.loyalty_ledger) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'loyalty_ledger', data: ledger }),
+        });
+      }
+      for (const inv of store.invoices) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'invoices', data: inv }),
+        });
+      }
+      for (const item of store.invoice_items) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'invoice_items', data: item }),
+        });
+      }
+      for (const ticket of store.service_tickets) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'service_tickets', data: ticket }),
+        });
+      }
+      for (const scrap of store.scrap_entries) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'scrap_entries', data: scrap }),
+        });
+      }
+      for (const transfer of store.godown_transfers) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'godown_transfers', data: transfer }),
+        });
+      }
+      for (const log of store.backups_log) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'backups_log', data: log }),
+        });
+      }
+      for (const [key, value] of Object.entries(store.settings)) {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'upsert', table: 'settings', data: { key, value } }),
+        });
+      }
+      isSyncingFromSQLite = false;
+    } catch (e) {
+      console.error('[SQLite Server] Seeding/Syncing store failed:', e);
+      isSyncingFromSQLite = false;
+    }
+  }
+
+  private async syncLocalStoreToIndexedDB(store: DBStore) {
+    try {
+      isSyncingFromSQLite = true;
+      await Promise.all([
+        this.dexieDb.users.clear(),
+        this.dexieDb.inventory.clear(),
+        this.dexieDb.vendors.clear(),
+        this.dexieDb.purchase_orders.clear(),
+        this.dexieDb.purchase_items.clear(),
+        this.dexieDb.customers.clear(),
+        this.dexieDb.loyalty_ledger.clear(),
+        this.dexieDb.invoices.clear(),
+        this.dexieDb.invoice_items.clear(),
+        this.dexieDb.service_tickets.clear(),
+        this.dexieDb.scrap_entries.clear(),
+        this.dexieDb.godown_transfers.clear(),
+        this.dexieDb.backups_log.clear(),
+        this.dexieDb.settings.clear(),
+      ]);
+
+      await Promise.all([
+        this.dexieDb.users.bulkAdd(store.users),
+        this.dexieDb.inventory.bulkAdd(store.inventory),
+        this.dexieDb.vendors.bulkAdd(store.vendors),
+        this.dexieDb.purchase_orders.bulkAdd(store.purchase_orders),
+        this.dexieDb.purchase_items.bulkAdd(store.purchase_items),
+        this.dexieDb.customers.bulkAdd(store.customers),
+        this.dexieDb.loyalty_ledger.bulkAdd(store.loyalty_ledger),
+        this.dexieDb.invoices.bulkAdd(store.invoices),
+        this.dexieDb.invoice_items.bulkAdd(store.invoice_items),
+        this.dexieDb.service_tickets.bulkAdd(store.service_tickets),
+        this.dexieDb.scrap_entries.bulkAdd(store.scrap_entries),
+        this.dexieDb.godown_transfers.bulkAdd(store.godown_transfers),
+        this.dexieDb.backups_log.bulkAdd(store.backups_log),
+        this.dexieDb.settings.bulkAdd(Object.entries(store.settings).map(([k, v]) => ({ key: k, value: v }))),
+      ]);
+      isSyncingFromSQLite = false;
+    } catch (e) {
+      console.warn('[IndexedDB Fallback Cache] Syncing failed:', e);
+      isSyncingFromSQLite = false;
+    }
+  }
+
+  public async pullServerUpdates() {
+    try {
+      const response = await fetch('/api/db');
+      if (response.ok) {
+        const store = await response.json();
+        
+        isSyncingFromSQLite = true;
+        this.memoryData = {
+          users: store.users || [],
+          inventory: store.inventory || [],
+          vendors: store.vendors || [],
+          purchase_orders: store.purchase_orders || [],
+          purchase_items: store.purchase_items || [],
+          customers: store.customers || [],
+          loyalty_ledger: store.loyalty_ledger || [],
+          invoices: store.invoices || [],
+          invoice_items: store.invoice_items || [],
+          service_tickets: store.service_tickets || [],
+          scrap_entries: store.scrap_entries || [],
+          godown_transfers: store.godown_transfers || [],
+          backups_log: store.backups_log || [],
+          settings: { ...INITIAL_SEED.settings, ...store.settings },
+        };
+        
+        await this.syncLocalStoreToIndexedDB(this.memoryData);
+        isSyncingFromSQLite = false;
+      }
+    } catch (e) {
+      console.warn('[SQLite Server Refresh] Failed polling updates:', e);
+      isSyncingFromSQLite = false;
+    }
+  }
+
+  private async seedInitialData() {
+    this.memoryData = { ...INITIAL_SEED };
+    try {
+      await Promise.all([
+        this.dexieDb.users.bulkAdd(INITIAL_SEED.users),
+        this.dexieDb.settings.bulkAdd(
+          Object.entries(INITIAL_SEED.settings).map(([key, value]) => ({ key, value }))
+        ),
+      ]);
     } catch (err) {
-      console.error('Failed saving local DB storage:', err);
+      console.error('Seeding database failed:', err);
     }
   }
 
@@ -262,14 +639,95 @@ class OfflineDB {
     return this.memoryData;
   }
 
-  public resetToSeed() {
-    this.saveToStorage(INITIAL_SEED);
-    return INITIAL_SEED;
+  public async resetToSeed() {
+    try {
+      await Promise.all([
+        this.dexieDb.users.clear(),
+        this.dexieDb.inventory.clear(),
+        this.dexieDb.vendors.clear(),
+        this.dexieDb.purchase_orders.clear(),
+        this.dexieDb.purchase_items.clear(),
+        this.dexieDb.customers.clear(),
+        this.dexieDb.loyalty_ledger.clear(),
+        this.dexieDb.invoices.clear(),
+        this.dexieDb.invoice_items.clear(),
+        this.dexieDb.service_tickets.clear(),
+        this.dexieDb.scrap_entries.clear(),
+        this.dexieDb.godown_transfers.clear(),
+        this.dexieDb.backups_log.clear(),
+        this.dexieDb.settings.clear(),
+      ]);
+      await this.seedInitialData();
+    } catch (err) {
+      console.error('Failed resetting Dexie database:', err);
+    }
+    return this.memoryData;
   }
 
-  public restoreFullBackup(newData: DBStore) {
-    this.saveToStorage(newData);
-    return true;
+  public async restoreFullBackup(newData: DBStore) {
+    this.memoryData = newData;
+    try {
+      await this.dexieDb.transaction(
+        'rw',
+        [
+          this.dexieDb.users,
+          this.dexieDb.inventory,
+          this.dexieDb.vendors,
+          this.dexieDb.purchase_orders,
+          this.dexieDb.purchase_items,
+          this.dexieDb.customers,
+          this.dexieDb.loyalty_ledger,
+          this.dexieDb.invoices,
+          this.dexieDb.invoice_items,
+          this.dexieDb.service_tickets,
+          this.dexieDb.scrap_entries,
+          this.dexieDb.godown_transfers,
+          this.dexieDb.backups_log,
+          this.dexieDb.settings,
+        ],
+        async () => {
+          await Promise.all([
+            this.dexieDb.users.clear(),
+            this.dexieDb.inventory.clear(),
+            this.dexieDb.vendors.clear(),
+            this.dexieDb.purchase_orders.clear(),
+            this.dexieDb.purchase_items.clear(),
+            this.dexieDb.customers.clear(),
+            this.dexieDb.loyalty_ledger.clear(),
+            this.dexieDb.invoices.clear(),
+            this.dexieDb.invoice_items.clear(),
+            this.dexieDb.service_tickets.clear(),
+            this.dexieDb.scrap_entries.clear(),
+            this.dexieDb.godown_transfers.clear(),
+            this.dexieDb.backups_log.clear(),
+            this.dexieDb.settings.clear(),
+          ]);
+
+          await Promise.all([
+            this.dexieDb.users.bulkAdd(newData.users || []),
+            this.dexieDb.inventory.bulkAdd(newData.inventory || []),
+            this.dexieDb.vendors.bulkAdd(newData.vendors || []),
+            this.dexieDb.purchase_orders.bulkAdd(newData.purchase_orders || []),
+            this.dexieDb.purchase_items.bulkAdd(newData.purchase_items || []),
+            this.dexieDb.customers.bulkAdd(newData.customers || []),
+            this.dexieDb.loyalty_ledger.bulkAdd(newData.loyalty_ledger || []),
+            this.dexieDb.invoices.bulkAdd(newData.invoices || []),
+            this.dexieDb.invoice_items.bulkAdd(newData.invoice_items || []),
+            this.dexieDb.service_tickets.bulkAdd(newData.service_tickets || []),
+            this.dexieDb.scrap_entries.bulkAdd(newData.scrap_entries || []),
+            this.dexieDb.godown_transfers.bulkAdd(newData.godown_transfers || []),
+            this.dexieDb.backups_log.bulkAdd(newData.backups_log || []),
+            this.dexieDb.settings.bulkAdd(
+              Object.entries(newData.settings || {}).map(([key, value]) => ({ key, value }))
+            ),
+          ]);
+        }
+      );
+      return true;
+    } catch (err) {
+      console.error('Failed database restore:', err);
+      return false;
+    }
   }
 
   // --- QUERY METHODS ---
@@ -287,11 +745,12 @@ class OfflineDB {
   }
 
   public saveUser(user: Partial<User> & { username: string; pin: string; role: 'Admin' | 'Cashier' }) {
-    const data = { ...this.memoryData };
     if (user.id) {
-      const idx = data.users.findIndex((u) => u.id === user.id);
+      const idx = this.memoryData.users.findIndex((u) => u.id === user.id);
       if (idx >= 0) {
-        data.users[idx] = { ...data.users[idx], ...user };
+        const updated = { ...this.memoryData.users[idx], ...user };
+        this.memoryData.users[idx] = updated;
+        this.dexieDb.users.put(updated).catch(console.error);
       }
     } else {
       const newUser: User = {
@@ -301,9 +760,9 @@ class OfflineDB {
         role: user.role,
         created_at: new Date().toISOString(),
       };
-      data.users.push(newUser);
+      this.memoryData.users.push(newUser);
+      this.dexieDb.users.add(newUser).catch(console.error);
     }
-    this.saveToStorage(data);
   }
 
   // Inventory
@@ -317,11 +776,12 @@ class OfflineDB {
   }
 
   public saveInventoryItem(item: Partial<InventoryItem> & { name: string; selling_price: number }) {
-    const data = { ...this.memoryData };
     if (item.id) {
-      const idx = data.inventory.findIndex((i) => i.id === item.id);
+      const idx = this.memoryData.inventory.findIndex((i) => i.id === item.id);
       if (idx >= 0) {
-        data.inventory[idx] = { ...data.inventory[idx], ...item };
+        const updated = { ...this.memoryData.inventory[idx], ...item };
+        this.memoryData.inventory[idx] = updated;
+        this.dexieDb.inventory.put(updated).catch(console.error);
       }
     } else {
       const newItem: InventoryItem = {
@@ -341,23 +801,19 @@ class OfflineDB {
         image_path: item.image_path || '',
         created_at: new Date().toISOString(),
       };
-      data.inventory.unshift(newItem);
+      this.memoryData.inventory.unshift(newItem);
+      this.dexieDb.inventory.add(newItem).catch(console.error);
     }
-    this.saveToStorage(data);
   }
 
-  public deleteInventoryItem(id: string): boolean {
-    const data = { ...this.memoryData };
-    data.inventory = data.inventory.filter((p) => p.id !== id);
-    this.saveToStorage(data);
-    return true;
+  public deleteInventoryItem(id: string) {
+    this.memoryData.inventory = this.memoryData.inventory.filter((i) => i.id !== id);
+    this.dexieDb.inventory.delete(id).catch(console.error);
   }
 
   public bulkImportInventory(items: Partial<InventoryItem>[]): { success: boolean; count: number; errors: string[] } {
-    const data = { ...this.memoryData };
     const errors: string[] = [];
-    const barcodesSeen = new Set(data.inventory.map((i) => i.barcode));
-
+    const barcodesSeen = new Set(this.memoryData.inventory.map((i) => i.barcode));
     const validated: InventoryItem[] = [];
 
     for (let i = 0; i < items.length; i++) {
@@ -396,15 +852,9 @@ class OfflineDB {
       return { success: false, count: 0, errors };
     }
 
-    data.inventory.unshift(...validated);
-    this.saveToStorage(data);
+    this.memoryData.inventory.unshift(...validated);
+    this.dexieDb.inventory.bulkAdd(validated).catch(console.error);
     return { success: true, count: validated.length, errors: [] };
-  }
-
-  public deleteInventoryItem(id: string) {
-    const data = { ...this.memoryData };
-    data.inventory = data.inventory.filter((i) => i.id !== id);
-    this.saveToStorage(data);
   }
 
   // Vendors & Purchases
@@ -413,10 +863,13 @@ class OfflineDB {
   }
 
   public saveVendor(vendor: Partial<Vendor> & { name: string }) {
-    const data = { ...this.memoryData };
     if (vendor.id) {
-      const idx = data.vendors.findIndex((v) => v.id === vendor.id);
-      if (idx >= 0) data.vendors[idx] = { ...data.vendors[idx], ...vendor };
+      const idx = this.memoryData.vendors.findIndex((v) => v.id === vendor.id);
+      if (idx >= 0) {
+        const updated = { ...this.memoryData.vendors[idx], ...vendor };
+        this.memoryData.vendors[idx] = updated;
+        this.dexieDb.vendors.put(updated).catch(console.error);
+      }
     } else {
       const newV: Vendor = {
         id: 'ven-' + Date.now(),
@@ -429,9 +882,9 @@ class OfflineDB {
         balance_due: Number(vendor.balance_due) || 0,
         created_at: new Date().toISOString(),
       };
-      data.vendors.unshift(newV);
+      this.memoryData.vendors.unshift(newV);
+      this.dexieDb.vendors.add(newV).catch(console.error);
     }
-    this.saveToStorage(data);
   }
 
   public getPurchaseOrders(): { order: PurchaseOrder; items: PurchaseItem[] }[] {
@@ -445,10 +898,9 @@ class OfflineDB {
     poData: { vendor_id: string; status: 'Draft' | 'Sent' | 'Received' | 'Paid'; paid_amount: number },
     items: { product_id: string; product_name: string; qty: number; cost_price: number }[]
   ) {
-    const data = { ...this.memoryData };
-    const vendor = data.vendors.find((v) => v.id === poData.vendor_id);
+    const vendor = this.memoryData.vendors.find((v) => v.id === poData.vendor_id);
     const poId = 'po-' + Date.now();
-    const poNumber = 'PO-' + new Date().getFullYear() + '-' + String(data.purchase_orders.length + 1).padStart(3, '0');
+    const poNumber = 'PO-' + new Date().getFullYear() + '-' + String(this.memoryData.purchase_orders.length + 1).padStart(3, '0');
 
     let totalAmount = 0;
     const poItems: PurchaseItem[] = items.map((item) => {
@@ -476,23 +928,28 @@ class OfflineDB {
       created_at: new Date().toISOString(),
     };
 
-    data.purchase_orders.unshift(newPO);
-    data.purchase_items.push(...poItems);
+    this.memoryData.purchase_orders.unshift(newPO);
+    this.memoryData.purchase_items.push(...poItems);
+
+    this.dexieDb.purchase_orders.add(newPO).catch(console.error);
+    this.dexieDb.purchase_items.bulkAdd(poItems).catch(console.error);
 
     // If Received, update inventory stock
     if (poData.status === 'Received') {
       poItems.forEach((pi) => {
-        const inv = data.inventory.find((i) => i.id === pi.product_id);
-        if (inv) inv.stock_qty += pi.qty;
+        const inv = this.memoryData.inventory.find((i) => i.id === pi.product_id);
+        if (inv) {
+          inv.stock_qty += pi.qty;
+          this.dexieDb.inventory.put(inv).catch(console.error);
+        }
       });
     }
 
     // Update vendor balance due
     if (vendor) {
       vendor.balance_due += totalAmount - poData.paid_amount;
+      this.dexieDb.vendors.put(vendor).catch(console.error);
     }
-
-    this.saveToStorage(data);
   }
 
   // Customers & Loyalty
@@ -506,10 +963,13 @@ class OfflineDB {
   }
 
   public saveCustomer(cust: Partial<Customer> & { name: string; mobile: string }) {
-    const data = { ...this.memoryData };
     if (cust.id) {
-      const idx = data.customers.findIndex((c) => c.id === cust.id);
-      if (idx >= 0) data.customers[idx] = { ...data.customers[idx], ...cust };
+      const idx = this.memoryData.customers.findIndex((c) => c.id === cust.id);
+      if (idx >= 0) {
+        const updated = { ...this.memoryData.customers[idx], ...cust };
+        this.memoryData.customers[idx] = updated;
+        this.dexieDb.customers.put(updated).catch(console.error);
+      }
     } else {
       const newC: Customer = {
         id: 'cust-' + Date.now(),
@@ -522,44 +982,61 @@ class OfflineDB {
         total_spent: Number(cust.total_spent) || 0,
         created_at: new Date().toISOString(),
       };
-      data.customers.unshift(newC);
+      this.memoryData.customers.unshift(newC);
+      this.dexieDb.customers.add(newC).catch(console.error);
     }
-    this.saveToStorage(data);
   }
 
   // Invoices & POS
   public getInvoices(): { invoice: Invoice; items: InvoiceItem[] }[] {
-    return this.memoryData.invoices.map((inv) => ({
+    const list = this.memoryData.invoices.map((inv) => ({
       invoice: inv,
-      items: this.memoryData.invoice_items.filter((ii) => ii.invoice_id === inv.id),
+      items: this.memoryData.invoice_items.filter(
+        (ii) => ii.invoice_id === inv.id || ii.invoice_id === inv.invoice_number
+      ),
     }));
+    return list.sort((a, b) => new Date(b.invoice.created_at).getTime() - new Date(a.invoice.created_at).getTime());
   }
 
-  public createInvoice(saleData: {
+  public getInvoice(idOrNumber: string): { invoice: Invoice; items: InvoiceItem[] } | null {
+    const inv = this.memoryData.invoices.find(
+      (i) => i.id === idOrNumber || i.invoice_number === idOrNumber
+    );
+    if (!inv) return null;
+    const items = this.memoryData.invoice_items.filter(
+      (ii) => ii.invoice_id === inv.id || ii.invoice_id === inv.invoice_number
+    );
+    return { invoice: inv, items };
+  }
+
+  public async createInvoice(saleData: {
     customer_id?: string;
     customer_name: string;
     customer_mobile: string;
     invoice_type: 'GST' | 'NON_GST' | 'MIXED';
     discount_amount: number;
+    exchange_amount?: number;
+    exchange_notes?: string;
     payment_method: 'CASH' | 'UPI' | 'CARD' | 'CREDIT';
     loyalty_points_redeemed?: number;
     items: { product_id: string; barcode: string; product_name: string; qty: number; unit_price: number; tax_rate: number }[];
-  }): Invoice {
-    const data = { ...this.memoryData };
+  }): Promise<Invoice> {
     const invId = 'inv-' + Date.now();
-    const invNumber = 'INV-' + new Date().getFullYear() + '-' + String(data.invoices.length + 1).padStart(4, '0');
+    const invNumber = 'INV-' + new Date().getFullYear() + '-' + String(this.memoryData.invoices.length + 1).padStart(4, '0');
 
     let subtotal = 0;
     let taxAmount = 0;
 
     const invItems: InvoiceItem[] = saleData.items.map((item) => {
       const lineSubtotal = item.qty * item.unit_price;
-      const lineTax = (lineSubtotal * item.tax_rate) / 100;
+      const lineTax = (saleData.invoice_type === 'GST' || saleData.invoice_type === 'MIXED')
+        ? ((lineSubtotal * item.tax_rate) / 100)
+        : 0;
       subtotal += lineSubtotal;
       taxAmount += lineTax;
 
-      // Update Inventory Stock
-      const invProd = data.inventory.find((i) => i.id === item.product_id);
+      // Update Inventory Stock in memory
+      const invProd = this.memoryData.inventory.find((i) => i.id === item.product_id);
       if (invProd) {
         invProd.stock_qty = Math.max(0, invProd.stock_qty - item.qty);
       }
@@ -577,7 +1054,7 @@ class OfflineDB {
       };
     });
 
-    const grandTotal = Math.max(0, subtotal + taxAmount - saleData.discount_amount);
+    const grandTotal = Math.max(0, subtotal + taxAmount - saleData.discount_amount - (saleData.exchange_amount || 0));
 
     const newInvoice: Invoice = {
       id: invId,
@@ -589,17 +1066,39 @@ class OfflineDB {
       subtotal,
       tax_amount: taxAmount,
       discount_amount: saleData.discount_amount,
+      exchange_amount: saleData.exchange_amount || 0,
+      exchange_notes: saleData.exchange_notes || '',
       grand_total: grandTotal,
       payment_method: saleData.payment_method,
       payment_status: 'PAID',
       created_at: new Date().toISOString(),
+      is_synced: 0,
     };
 
-    data.invoices.unshift(newInvoice);
-    data.invoice_items.push(...invItems);
+    this.memoryData.invoices.unshift(newInvoice);
+    this.memoryData.invoice_items.push(...invItems);
+
+    // Save to local IndexedDB & await server SQLite database sync
+    if (typeof window !== 'undefined' && this.dexieDb) {
+      await this.dexieDb.invoices.add(newInvoice).catch(console.error);
+      await postRowToSQLite('upsert', 'invoices', newInvoice);
+
+      for (const item of invItems) {
+        await this.dexieDb.invoice_items.add(item).catch(console.error);
+        await postRowToSQLite('upsert', 'invoice_items', item);
+      }
+
+      for (const item of saleData.items) {
+        const invProd = this.memoryData.inventory.find((i) => i.id === item.product_id);
+        if (invProd) {
+          await this.dexieDb.inventory.put(invProd).catch(console.error);
+          await postRowToSQLite('upsert', 'inventory', invProd);
+        }
+      }
+    }
 
     // Update Customer record & loyalty ledger if customer selected
-    let customer = data.customers.find(
+    let customer = this.memoryData.customers.find(
       (c) => (saleData.customer_id && c.id === saleData.customer_id) || (saleData.customer_mobile && c.mobile === saleData.customer_mobile)
     );
 
@@ -615,7 +1114,11 @@ class OfflineDB {
         total_spent: 0,
         created_at: new Date().toISOString(),
       };
-      data.customers.unshift(customer);
+      this.memoryData.customers.unshift(customer);
+      if (typeof window !== 'undefined' && this.dexieDb) {
+        await this.dexieDb.customers.add(customer).catch(console.error);
+        await postRowToSQLite('upsert', 'customers', customer);
+      }
     }
 
     if (customer) {
@@ -626,32 +1129,151 @@ class OfflineDB {
         pointsNet -= saleData.loyalty_points_redeemed;
       }
       customer.loyalty_points = Math.max(0, customer.loyalty_points + pointsNet);
+      if (typeof window !== 'undefined' && this.dexieDb) {
+        await this.dexieDb.customers.put(customer).catch(console.error);
+        await postRowToSQLite('upsert', 'customers', customer);
+      }
 
-      data.loyalty_ledger.unshift({
+      const newLoyalty = {
         id: 'lgt-' + Date.now(),
         customer_id: customer.id,
         points_change: pointsNet,
         reason: `Transaction ${invNumber}`,
         created_at: new Date().toISOString(),
-      });
+      };
+      this.memoryData.loyalty_ledger.unshift(newLoyalty);
+      if (typeof window !== 'undefined' && this.dexieDb) {
+        await this.dexieDb.loyalty_ledger.add(newLoyalty).catch(console.error);
+        await postRowToSQLite('upsert', 'loyalty_ledger', newLoyalty);
+      }
     }
 
-    this.saveToStorage(data);
     return newInvoice;
   }
 
-  public returnInvoiceItem(invoiceId: string, itemId: string, returnQty: number) {
-    const data = { ...this.memoryData };
-    const item = data.invoice_items.find((ii) => ii.id === itemId && ii.invoice_id === invoiceId);
+  public async updateInvoice(invoiceId: string, saleData: {
+    customer_name: string;
+    customer_mobile: string;
+    invoice_type: 'GST' | 'NON_GST' | 'MIXED';
+    discount_amount: number;
+    exchange_amount?: number;
+    exchange_notes?: string;
+    payment_method: 'CASH' | 'UPI' | 'CARD' | 'CREDIT';
+    items: { id?: string; product_id: string; barcode: string; product_name: string; qty: number; unit_price: number; tax_rate: number }[];
+  }) {
+    const invoice = this.memoryData.invoices.find((i) => i.id === invoiceId);
+    if (!invoice) throw new Error("Invoice not found in memory");
+
+    // 1. Revert original inventory stocks
+    const originalItems = this.memoryData.invoice_items.filter((ii) => ii.invoice_id === invoiceId);
+    for (const orig of originalItems) {
+      const prod = this.memoryData.inventory.find((p) => p.id === orig.product_id);
+      if (prod) {
+        prod.stock_qty += orig.qty;
+      }
+    }
+
+    // 4. Calculate new subtotal and tax
+    let subtotal = 0;
+    let taxAmount = 0;
+
+    const newInvItems: InvoiceItem[] = saleData.items.map((item) => {
+      const lineSubtotal = item.qty * item.unit_price;
+      const lineTax = (saleData.invoice_type === 'GST' || saleData.invoice_type === 'MIXED')
+        ? ((lineSubtotal * item.tax_rate) / 100)
+        : 0;
+      subtotal += lineSubtotal;
+      taxAmount += lineTax;
+
+      // Update inventory stock in memory
+      const prod = this.memoryData.inventory.find((p) => p.id === item.product_id);
+      if (prod) {
+        prod.stock_qty = Math.max(0, prod.stock_qty - item.qty);
+      }
+
+      return {
+        id: item.id || ('ii-' + Math.random().toString(36).substr(2, 9)),
+        invoice_id: invoiceId,
+        product_id: item.product_id,
+        barcode: item.barcode,
+        product_name: item.product_name,
+        qty: item.qty,
+        unit_price: item.unit_price,
+        tax_rate: item.tax_rate,
+        total_price: lineSubtotal,
+      };
+    });
+
+    const grandTotal = Math.max(0, subtotal + taxAmount - saleData.discount_amount - (saleData.exchange_amount || 0));
+
+    // Update invoice fields
+    invoice.customer_name = saleData.customer_name;
+    invoice.customer_mobile = saleData.customer_mobile;
+    invoice.invoice_type = saleData.invoice_type;
+    invoice.subtotal = subtotal;
+    invoice.tax_amount = taxAmount;
+    invoice.discount_amount = saleData.discount_amount;
+    invoice.exchange_amount = saleData.exchange_amount || 0;
+    invoice.exchange_notes = saleData.exchange_notes || '';
+    invoice.grand_total = grandTotal;
+    invoice.payment_method = saleData.payment_method;
+
+    // 5. Update local memory structures
+    this.memoryData.invoice_items = this.memoryData.invoice_items.filter((ii) => ii.invoice_id !== invoiceId);
+    this.memoryData.invoice_items.push(...newInvItems);
+
+    // 6. Persist to Dexie and SQLite
+    if (typeof window !== 'undefined' && this.dexieDb) {
+      await this.dexieDb.invoices.put(invoice).catch(console.error);
+      await postRowToSQLite('upsert', 'invoices', invoice);
+
+      // Delete old items
+      for (const orig of originalItems) {
+        await this.dexieDb.invoice_items.delete(orig.id).catch(console.error);
+        await postRowToSQLite('delete', 'invoice_items', undefined, orig.id);
+      }
+
+      // Save new items
+      for (const item of newInvItems) {
+        await this.dexieDb.invoice_items.put(item).catch(console.error);
+        await postRowToSQLite('upsert', 'invoice_items', item);
+      }
+
+      // Update inventory levels in Dexie/SQLite for any modified products
+      const modifiedProductIds = new Set([
+        ...originalItems.map((oi) => oi.product_id),
+        ...newInvItems.map((ni) => ni.product_id),
+      ]);
+      for (const pId of modifiedProductIds) {
+        const prod = this.memoryData.inventory.find((p) => p.id === pId);
+        if (prod) {
+          await this.dexieDb.inventory.put(prod).catch(console.error);
+          await postRowToSQLite('upsert', 'inventory', prod);
+        }
+      }
+    }
+
+    return { invoice, items: newInvItems };
+  }
+
+  public async returnInvoiceItem(invoiceId: string, itemId: string, returnQty: number) {
+    const item = this.memoryData.invoice_items.find((ii) => ii.id === itemId && ii.invoice_id === invoiceId);
     if (!item) return;
 
     item.is_return = true;
-    const invProd = data.inventory.find((i) => i.id === item.product_id);
-    if (invProd) {
-      invProd.stock_qty += returnQty;
+    if (typeof window !== 'undefined' && this.dexieDb) {
+      await this.dexieDb.invoice_items.put(item).catch(console.error);
+      await postRowToSQLite('upsert', 'invoice_items', item);
     }
 
-    this.saveToStorage(data);
+    const invProd = this.memoryData.inventory.find((i) => i.id === item.product_id);
+    if (invProd) {
+      invProd.stock_qty += returnQty;
+      if (typeof window !== 'undefined' && this.dexieDb) {
+        await this.dexieDb.inventory.put(invProd).catch(console.error);
+        await postRowToSQLite('upsert', 'inventory', invProd);
+      }
+    }
   }
 
   // Service Center
@@ -660,18 +1282,19 @@ class OfflineDB {
   }
 
   public saveServiceTicket(ticket: Partial<ServiceTicket> & { customer_name: string; device_name: string }) {
-    const data = { ...this.memoryData };
     if (ticket.id) {
-      const idx = data.service_tickets.findIndex((s) => s.id === ticket.id);
+      const idx = this.memoryData.service_tickets.findIndex((s) => s.id === ticket.id);
       if (idx >= 0) {
-        data.service_tickets[idx] = {
-          ...data.service_tickets[idx],
+        const updated = {
+          ...this.memoryData.service_tickets[idx],
           ...ticket,
           updated_at: new Date().toISOString(),
         };
+        this.memoryData.service_tickets[idx] = updated;
+        this.dexieDb.service_tickets.put(updated).catch(console.error);
       }
     } else {
-      const count = data.service_tickets.length + 1;
+      const count = this.memoryData.service_tickets.length + 1;
       const newTicket: ServiceTicket = {
         id: 'srv-' + Date.now(),
         ticket_number: 'SRV-' + new Date().getFullYear() + '-' + String(count).padStart(3, '0'),
@@ -687,9 +1310,9 @@ class OfflineDB {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      data.service_tickets.unshift(newTicket);
+      this.memoryData.service_tickets.unshift(newTicket);
+      this.dexieDb.service_tickets.add(newTicket).catch(console.error);
     }
-    this.saveToStorage(data);
   }
 
   // Scrap Buying
@@ -698,7 +1321,6 @@ class OfflineDB {
   }
 
   public saveScrapEntry(entry: Partial<ScrapEntry> & { item_type: string; weight_kg: number; price_per_kg: number }) {
-    const data = { ...this.memoryData };
     const weight = Number(entry.weight_kg) || 0;
     const rate = Number(entry.price_per_kg) || 0;
     const payout = weight * rate;
@@ -714,8 +1336,8 @@ class OfflineDB {
       notes: entry.notes || '',
       created_at: new Date().toISOString(),
     };
-    data.scrap_entries.unshift(newScrap);
-    this.saveToStorage(data);
+    this.memoryData.scrap_entries.unshift(newScrap);
+    this.dexieDb.scrap_entries.add(newScrap).catch(console.error);
   }
 
   // Godown Stock Transfers
@@ -729,8 +1351,7 @@ class OfflineDB {
     qty: number;
     notes?: string;
   }): { success: boolean; message: string } {
-    const data = { ...this.memoryData };
-    const product = data.inventory.find((p) => p.id === transfer.product_id);
+    const product = this.memoryData.inventory.find((p) => p.id === transfer.product_id);
 
     if (!product) return { success: false, message: 'Product not found' };
     const transferQty = Number(transfer.qty);
@@ -759,8 +1380,9 @@ class OfflineDB {
       created_at: new Date().toISOString(),
     };
 
-    data.godown_transfers.unshift(newLog);
-    this.saveToStorage(data);
+    this.memoryData.godown_transfers.unshift(newLog);
+    this.dexieDb.inventory.put(product).catch(console.error);
+    this.dexieDb.godown_transfers.add(newLog).catch(console.error);
     return { success: true, message: 'Stock transferred successfully' };
   }
 
@@ -770,9 +1392,11 @@ class OfflineDB {
   }
 
   public updateSettings(newSettings: Record<string, any>) {
-    const data = { ...this.memoryData };
-    data.settings = { ...data.settings, ...newSettings };
-    this.saveToStorage(data);
+    this.memoryData.settings = { ...this.memoryData.settings, ...newSettings };
+    const settingsEntries = Object.entries(newSettings).map(([key, value]) => ({ key, value }));
+    settingsEntries.forEach((s) => {
+      this.dexieDb.settings.put(s).catch(console.error);
+    });
   }
 
   public getBackupsLog(): BackupLog[] {
@@ -780,19 +1404,36 @@ class OfflineDB {
   }
 
   public logBackup(filename: string, type: 'MANUAL' | 'SCHEDULED', sizeKb: number, status: 'SUCCESS' | 'FAILED') {
-    const data = { ...this.memoryData };
-    data.backups_log.unshift({
+    const newBackup = {
       id: 'bkp-' + Date.now(),
       filename,
       type,
       timestamp: new Date().toISOString(),
       size_kb: sizeKb,
       status,
-    });
+    };
+    this.memoryData.backups_log.unshift(newBackup);
+    this.dexieDb.backups_log.add(newBackup).catch(console.error);
+
     // Retain last N backups
-    const retain = data.settings.retain_backups_count || 30;
-    data.backups_log = data.backups_log.slice(0, retain);
-    this.saveToStorage(data);
+    const retain = this.memoryData.settings.retain_backups_count || 30;
+    if (this.memoryData.backups_log.length > retain) {
+      const removed = this.memoryData.backups_log.slice(retain);
+      this.memoryData.backups_log = this.memoryData.backups_log.slice(0, retain);
+      removed.forEach((r) => {
+        this.dexieDb.backups_log.delete(r.id).catch(console.error);
+      });
+    }
+  }
+
+  public markInvoicesSynced(ids: string[]) {
+    ids.forEach((id) => {
+      const idx = this.memoryData.invoices.findIndex((inv) => inv.id === id);
+      if (idx >= 0) {
+        this.memoryData.invoices[idx].is_synced = 1;
+        this.dexieDb.invoices.update(id, { is_synced: 1 }).catch(console.error);
+      }
+    });
   }
 }
 

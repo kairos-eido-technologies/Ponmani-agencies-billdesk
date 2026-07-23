@@ -122,6 +122,22 @@ function SettingsPage() {
                 />
               </L>
             </div>
+            <L label="Receipt Custom Header (Sub-Header)">
+              <input
+                value={settingsForm.receipt_header_note || ""}
+                onChange={(e) => setSettingsForm({ ...settingsForm, receipt_header_note: e.target.value })}
+                placeholder="e.g. Hardware • Electricals • Electronics"
+                className={ic}
+              />
+            </L>
+            <L label="Receipt Custom Footer Note / Terms">
+              <textarea
+                value={settingsForm.receipt_footer_note || ""}
+                onChange={(e) => setSettingsForm({ ...settingsForm, receipt_footer_note: e.target.value })}
+                placeholder="e.g. Goods once sold can be exchanged within 7 days..."
+                className="w-full min-h-[60px] rounded bg-input border border-border p-2 text-xs focus:outline-none focus:border-primary font-mono"
+              />
+            </L>
             <button type="submit" className="h-9 px-4 rounded bg-primary text-primary-foreground font-bold text-xs hover:accent-glow transition">
               Save Store Profile
             </button>

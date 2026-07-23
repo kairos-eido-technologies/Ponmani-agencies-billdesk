@@ -9,6 +9,8 @@ import {
 import { useEffect } from "react";
 import { useCart } from "@/lib/cart-store";
 import { useAuth } from "@/lib/auth-store";
+import { db } from "@/lib/db/db";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   ScanBarcode,
@@ -80,6 +82,29 @@ function Shell() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
+  const queryClient = useQueryClient();
+
+  // Poll local SQLite database server for changes every 3 seconds
+  // This ensures other browser sessions (Chrome, Edge) synchronize instantly
+  useEffect(() => {
+    let active = true;
+    const interval = setInterval(async () => {
+      if (!db.isLoaded) return;
+      const oldStoreStr = JSON.stringify(db.getStore());
+      await db.pullServerUpdates();
+      const newStoreStr = JSON.stringify(db.getStore());
+
+      if (active && oldStoreStr !== newStoreStr) {
+        // Invalidate React Query caches to trigger component re-renders
+        queryClient.invalidateQueries();
+      }
+    }, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [queryClient]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -112,7 +137,7 @@ function Shell() {
             <div className="min-w-0">
               <div className="text-sm font-semibold truncate">Ponmani Agencies</div>
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <WifiOff className="h-2.5 w-2.5 text-emerald-400" /> Offline ERP
+                Local SQLite Active
               </div>
             </div>
           )}
@@ -154,9 +179,14 @@ function Shell() {
         </nav>
 
         {!collapsed && (
-          <div className="mx-2 mb-2 p-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-            <div className="truncate">Local DB Active (100% Offline)</div>
+          <div className="mx-2 mb-2 p-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5 font-semibold">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+              <div className="truncate">Local SQLite Engine</div>
+            </div>
+            <div className="text-[9px] text-muted-foreground pl-5 font-mono">
+              Fast, Persistent, Multi-Instance
+            </div>
           </div>
         )}
 
@@ -199,6 +229,8 @@ function Shell() {
           >
             <Plus className="h-4 w-4" /> New Sale (POS)
           </Link>
+
+
 
           <div className="h-9 pl-3 pr-2 rounded-md border border-border flex items-center gap-2 text-xs bg-card">
             <div className="h-6 w-6 rounded-full bg-primary/20 border border-primary/40 grid place-items-center text-[10px] font-bold font-mono text-primary">

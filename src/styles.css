@@ -136,7 +136,42 @@
 }
 
 @media print {
-  body { background: white !important; color: black !important; }
-  .no-print { display: none !important; }
-  .print-receipt { font-family: var(--font-mono); font-size: 11px; width: 80mm; }
+  /* Hide everything except the thermal receipt */
+  body { background: white !important; color: black !important; margin: 0 !important; }
+  
+  /* Hide the app shell, sidebar, nav */
+  nav, aside, header, footer, .no-print, .print\:hidden { display: none !important; }
+
+  /* Page setup — 80mm thermal paper */
+  @page {
+    size: 80mm auto;
+    margin: 4mm 3mm;
+  }
+
+  /* The receipt itself */
+  .thermal-receipt {
+    width: 74mm !important;
+    max-width: 74mm !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+    color: black !important;
+    background: white !important;
+  }
+
+  /* Force all text black on print */
+  .thermal-receipt * {
+    color: black !important;
+    background: transparent !important;
+    border-color: #000 !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Remove screen-only preview wrapper padding */
+  .thermal-receipt {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
 }
+

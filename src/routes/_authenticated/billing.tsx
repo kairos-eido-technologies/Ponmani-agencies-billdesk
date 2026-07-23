@@ -1,26 +1,69 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { db } from "@/lib/db/db";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Receipt, RefreshCw, Filter, Search, Printer, RotateCcw } from "lucide-react";
+import { Receipt, RefreshCw, Filter, Search, Printer, RotateCcw, Pencil } from "lucide-react";
+import { BillViewerModal } from "@/components/BillViewerModal";
+import { EditInvoiceModal } from "@/components/EditInvoiceModal";
+
+function matchesDateFilter(dateStr: string, filter: string) {
+  if (filter === "ALL") return true;
+  const date = new Date(dateStr);
+  const now = new Date();
+  
+  const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  
+  if (filter === "TODAY") {
+    return dateDay === today;
+  }
+  if (filter === "YESTERDAY") {
+    const yesterday = today - 86400000;
+    return dateDay === yesterday;
+  }
+  if (filter === "WEEK") {
+    const sevenDaysAgo = today - 7 * 86400000;
+    return dateDay >= sevenDaysAgo;
+  }
+  if (filter === "MONTH") {
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  }
+  if (filter === "LAST_MONTH") {
+    let targetMonth = now.getMonth() - 1;
+    let targetYear = now.getFullYear();
+    if (targetMonth < 0) {
+      targetMonth = 11;
+      targetYear -= 1;
+    }
+    return date.getMonth() === targetMonth && date.getFullYear() === targetYear;
+  }
+  return true;
+}
 
 export const Route = createFileRoute("/_authenticated/billing")({ component: BillingHubPage });
 
 function BillingHubPage() {
   const qc = useQueryClient();
   const [filterType, setFilterType] = useState<"ALL" | "GST" | "NON_GST">("ALL");
+  const [dateFilter, setDateFilter] = useState<"ALL" | "TODAY" | "YESTERDAY" | "WEEK" | "MONTH" | "LAST_MONTH">("ALL");
   const [search, setSearch] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+  const [viewingBill, setViewingBill] = useState<{ invoice: any; items: any[] } | null>(null);
+  const [editingBill, setEditingBill] = useState<{ invoice: any; items: any[] } | null>(null);
 
   const invoices = useQuery({
-    queryKey: ["local-billing-invoices", filterType, search],
+    queryKey: ["local-billing-invoices", filterType, search, dateFilter],
     queryFn: async () => {
+      await db.loadPromise;
       let all = db.getInvoices();
       if (filterType !== "ALL") {
         all = all.filter((i) => i.invoice.invoice_type === filterType);
+      }
+      if (dateFilter !== "ALL") {
+        all = all.filter((i) => matchesDateFilter(i.invoice.created_at, dateFilter));
       }
       if (search.trim()) {
         const clean = search.toLowerCase();
@@ -44,7 +87,7 @@ function BillingHubPage() {
 
       {/* Filter Bar */}
       <div className="card-surface p-3 flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
           {(["ALL", "GST", "NON_GST"] as const).map((t) => (
             <button
               key={t}
@@ -58,6 +101,21 @@ function BillingHubPage() {
               {t === "ALL" ? "All Invoices" : t === "GST" ? "GST Tax Invoices" : "Non-GST Bills"}
             </button>
           ))}
+
+          <span className="text-border mx-1">|</span>
+
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value as any)}
+            className="h-9 rounded bg-input border border-border px-3 text-xs font-bold text-foreground focus:border-primary focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">All Dates</option>
+            <option value="TODAY">Today</option>
+            <option value="YESTERDAY">Yesterday</option>
+            <option value="WEEK">Last 7 Days</option>
+            <option value="MONTH">This Month</option>
+            <option value="LAST_MONTH">Last Month</option>
+          </select>
         </div>
 
         <div className="relative w-full sm:w-72">
@@ -100,20 +158,25 @@ function BillingHubPage() {
                 <td className="px-4 py-2.5 text-right font-mono text-xs text-muted-foreground">{inr(i.subtotal)}</td>
                 <td className="px-4 py-2.5 text-right font-mono text-xs text-muted-foreground">{inr(i.tax_amount)}</td>
                 <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">{inr(i.grand_total)}</td>
-                <td className="px-4 py-2.5 text-right space-x-2">
+                <td className="px-4 py-2.5 text-right whitespace-nowrap space-x-1.5">
                   <button
                     onClick={() => setSelectedInvoice({ invoice: i, items })}
-                    className="h-7 px-2.5 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1"
+                    className="h-7 px-2 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1 transition"
                   >
                     <RotateCcw className="h-3 w-3 text-amber-400" /> Return / Exchange
                   </button>
-                  <Link
-                    to="/invoices/$id"
-                    params={{ id: i.id }}
-                    className="h-7 px-2.5 rounded bg-primary/15 text-primary hover:bg-primary/25 text-xs font-semibold border border-primary/30 inline-flex items-center gap-1"
+                  <button
+                    onClick={() => setEditingBill({ invoice: i, items })}
+                    className="h-7 px-2 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1 transition"
                   >
-                    <Printer className="h-3 w-3" /> View Bill
-                  </Link>
+                    <Pencil className="h-3 w-3 text-indigo-400" /> Edit Bill
+                  </button>
+                  <button
+                    onClick={() => setViewingBill({ invoice: i, items })}
+                    className="h-7 px-2 rounded bg-primary/15 text-primary hover:bg-primary/25 text-xs font-semibold border border-primary/30 inline-flex items-center gap-1 transition"
+                  >
+                    <Printer className="h-3 w-3" /> Print Bill
+                  </button>
                 </td>
               </tr>
             ))}
@@ -127,6 +190,25 @@ function BillingHubPage() {
           </tbody>
         </table>
       </div>
+
+      {viewingBill && (
+        <BillViewerModal
+          invoiceData={viewingBill}
+          onClose={() => setViewingBill(null)}
+        />
+      )}
+
+      {editingBill && (
+        <EditInvoiceModal
+          invoice={editingBill.invoice}
+          items={editingBill.items}
+          onClose={() => setEditingBill(null)}
+          onSaved={() => {
+            qc.invalidateQueries();
+            setEditingBill(null);
+          }}
+        />
+      )}
 
       {selectedInvoice && (
         <ReturnWizardModal
@@ -158,11 +240,11 @@ function ReturnWizardModal({
   const [selectedItemId, setSelectedItemId] = useState(items[0]?.id || "");
   const [returnQty, setReturnQty] = useState(1);
 
-  function handleReturn() {
+  async function handleReturn() {
     const item = items.find((it) => it.id === selectedItemId);
     if (!item) return;
 
-    db.returnInvoiceItem(invoice.id, item.id, returnQty);
+    await db.returnInvoiceItem(invoice.id, item.id, returnQty);
     toast.success(`Returned ${returnQty}x ${item.product_name}. Inventory stock restored!`);
     onReturned();
   }

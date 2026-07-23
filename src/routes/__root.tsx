@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "sonner";
@@ -113,8 +113,28 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+import { db } from "@/lib/db/db";
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [loaded, setLoaded] = useState(db.isLoaded);
+
+  useEffect(() => {
+    if (!loaded) {
+      db.loadPromise.then(() => setLoaded(true));
+    }
+  }, [loaded]);
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen bg-[#16181D] flex flex-col items-center justify-center text-foreground font-sans">
+        <div className="space-y-4 text-center">
+          <div className="h-10 w-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-sm font-semibold text-muted-foreground">Initializing Offline Database Engine...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

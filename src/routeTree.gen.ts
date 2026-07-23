@@ -25,6 +25,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedScrapRouteImport } from './routes/_authenticated/scrap'
 import { Route as AuthenticatedServiceRouteImport } from './routes/_authenticated/service'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedInvoicesIndexRouteImport } from './routes/_authenticated/invoices.index'
 import { Route as AuthenticatedInvoicesIdRouteImport } from './routes/_authenticated/invoices.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -106,6 +107,12 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedInvoicesIndexRoute =
+  AuthenticatedInvoicesIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedInvoicesRoute,
+  } as any)
 const AuthenticatedInvoicesIdRoute = AuthenticatedInvoicesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -129,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/service': typeof AuthenticatedServiceRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/invoices/$id': typeof AuthenticatedInvoicesIdRoute
+  '/invoices/': typeof AuthenticatedInvoicesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -139,7 +147,6 @@ export interface FileRoutesByTo {
   '/godown': typeof AuthenticatedGodownRoute
   '/gst': typeof AuthenticatedGstRoute
   '/inventory': typeof AuthenticatedInventoryRoute
-  '/invoices': typeof AuthenticatedInvoicesRouteWithChildren
   '/pos': typeof AuthenticatedPosRoute
   '/purchase': typeof AuthenticatedPurchaseRoute
   '/reports': typeof AuthenticatedReportsRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   '/service': typeof AuthenticatedServiceRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/invoices/$id': typeof AuthenticatedInvoicesIdRoute
+  '/invoices': typeof AuthenticatedInvoicesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/_authenticated/service': typeof AuthenticatedServiceRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/invoices/$id': typeof AuthenticatedInvoicesIdRoute
+  '/_authenticated/invoices/': typeof AuthenticatedInvoicesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/service'
     | '/settings'
     | '/invoices/$id'
+    | '/invoices/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -197,7 +207,6 @@ export interface FileRouteTypes {
     | '/godown'
     | '/gst'
     | '/inventory'
-    | '/invoices'
     | '/pos'
     | '/purchase'
     | '/reports'
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/service'
     | '/settings'
     | '/invoices/$id'
+    | '/invoices'
   id:
     | '__root__'
     | '/'
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
     | '/_authenticated/service'
     | '/_authenticated/settings'
     | '/_authenticated/invoices/$id'
+    | '/_authenticated/invoices/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -346,6 +357,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/invoices/': {
+      id: '/_authenticated/invoices/'
+      path: '/'
+      fullPath: '/invoices/'
+      preLoaderRoute: typeof AuthenticatedInvoicesIndexRouteImport
+      parentRoute: typeof AuthenticatedInvoicesRoute
+    }
     '/_authenticated/invoices/$id': {
       id: '/_authenticated/invoices/$id'
       path: '/$id'
@@ -358,10 +376,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedInvoicesRouteChildren {
   AuthenticatedInvoicesIdRoute: typeof AuthenticatedInvoicesIdRoute
+  AuthenticatedInvoicesIndexRoute: typeof AuthenticatedInvoicesIndexRoute
 }
 
 const AuthenticatedInvoicesRouteChildren: AuthenticatedInvoicesRouteChildren = {
   AuthenticatedInvoicesIdRoute: AuthenticatedInvoicesIdRoute,
+  AuthenticatedInvoicesIndexRoute: AuthenticatedInvoicesIndexRoute,
 }
 
 const AuthenticatedInvoicesRouteWithChildren =

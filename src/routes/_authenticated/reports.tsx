@@ -84,6 +84,11 @@ function ReportsPage() {
           const totalCogs = salesInfo.unitsSold * p.cost_price;
           const netRealizedPnl = salesInfo.revenue - totalCogs;
 
+          const totalStock = Number(p.stock_qty || 0) + Number(p.godown_qty || 0);
+          const totalPurchasedQty = totalStock + salesInfo.unitsSold;
+          const totalInvestment = totalPurchasedQty * p.cost_price;
+          const cashFlowPnl = salesInfo.revenue - totalInvestment;
+
           return {
             id: p.id,
             label: p.name,
@@ -98,6 +103,8 @@ function ReportsPage() {
             TotalRevenue: salesInfo.revenue,
             TotalCogs: totalCogs,
             NetRealizedPnl: netRealizedPnl,
+            TotalInvestment: totalInvestment,
+            CashFlowPnl: cashFlowPnl,
           };
         });
       }
@@ -275,13 +282,14 @@ function ReportsPage() {
                     <th className="px-3 py-2 text-right">Unit Profit / Loss</th>
                     <th className="px-3 py-2 text-right">Margin %</th>
                     <th className="px-3 py-2 text-right">Units Sold</th>
-                    <th className="px-3 py-2 text-right">Net Realized P&L</th>
+                    <th className="px-3 py-2 text-right font-bold text-blue-400">Investment Recovery P&L</th>
+                    <th className="px-3 py-2 text-center">Recovery Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border font-mono">
                   {(reportData.data || []).map((row: any, i: number) => {
                     const isProfit = row.UnitPnl >= 0;
-                    const isRealizedProfit = row.NetRealizedPnl >= 0;
+                    const isRecovered = row.CashFlowPnl >= 0;
                     return (
                       <tr key={i} className="hover:bg-secondary/40 transition">
                         <td className="px-3 py-2 font-sans font-semibold text-foreground">{row.label}</td>
@@ -294,15 +302,37 @@ function ReportsPage() {
                         </td>
                         <td className="px-3 py-2 text-right text-muted-foreground">{row.MarginPercent}%</td>
                         <td className="px-3 py-2 text-right font-bold text-foreground">{qty(row.UnitsSold)}</td>
-                        <td className={`px-3 py-2 text-right font-bold ${isRealizedProfit ? "text-emerald-400" : "text-destructive"}`}>
-                          {isRealizedProfit ? `+${inr(row.NetRealizedPnl)}` : inr(row.NetRealizedPnl)}
+                        <td className="px-3 py-2 text-right">
+                          <div className={`font-bold ${row.UnitsSold === 0 ? "text-muted-foreground" : isRecovered ? "text-emerald-400" : "text-amber-500"}`}>
+                            {row.UnitsSold > 0 ? (isRecovered ? `+${inr(row.CashFlowPnl)}` : inr(row.CashFlowPnl)) : `-${inr(row.TotalInvestment)}`}
+                          </div>
+                          {row.UnitsSold > 0 && (
+                            <div className="text-[9px] text-emerald-400/80">
+                              Markup: +{inr(row.NetRealizedPnl)}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          {row.UnitsSold === 0 ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-secondary text-muted-foreground border border-border">
+                              NO SALES
+                            </span>
+                          ) : isRecovered ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500 text-black border border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                              RECOVERED
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/30">
+                              UNRECOVERED
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
                   })}
                   {(!reportData.data || reportData.data.length === 0) && (
                     <tr>
-                      <td colSpan={9} className="text-center py-8 text-muted-foreground">
+                      <td colSpan={10} className="text-center py-8 text-muted-foreground">
                         No products available for P&L analysis.
                       </td>
                     </tr>

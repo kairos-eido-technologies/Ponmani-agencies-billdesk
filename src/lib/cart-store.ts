@@ -21,6 +21,8 @@ type State = {
   loyaltyAvailable: number;
   loyaltyRedeem: number;
   invoiceDiscount: number;
+  exchangeAmount: number;
+  exchangeNotes: string;
   gstEnabled: boolean;
   payments: PaymentSplit[];
   sidebarCollapsed: boolean;
@@ -35,9 +37,23 @@ type Actions = {
   setCustomer: (c: { id: string | null; mobile: string; name: string; loyalty: number }) => void;
   setLoyaltyRedeem: (n: number) => void;
   setInvoiceDiscount: (n: number) => void;
+  setExchange: (amount: number, notes: string) => void;
   toggleGst: (v?: boolean) => void;
   setPayments: (p: PaymentSplit[]) => void;
   toggleSidebar: () => void;
+  loadCart: (cartState: {
+    lines: CartLine[];
+    customerId: string | null;
+    customerMobile: string;
+    customerName: string;
+    loyaltyAvailable: number;
+    loyaltyRedeem: number;
+    invoiceDiscount: number;
+    exchangeAmount?: number;
+    exchangeNotes?: string;
+    gstEnabled: boolean;
+    payments: PaymentSplit[];
+  }) => void;
 };
 
 export const useCart = create<State & Actions>((set, get) => ({
@@ -48,6 +64,8 @@ export const useCart = create<State & Actions>((set, get) => ({
   loyaltyAvailable: 0,
   loyaltyRedeem: 0,
   invoiceDiscount: 0,
+  exchangeAmount: 0,
+  exchangeNotes: "",
   gstEnabled: false,
   payments: [{ method: "Cash", amount: 0 }],
   sidebarCollapsed: false,
@@ -85,6 +103,8 @@ export const useCart = create<State & Actions>((set, get) => ({
       loyaltyAvailable: 0,
       loyaltyRedeem: 0,
       invoiceDiscount: 0,
+      exchangeAmount: 0,
+      exchangeNotes: "",
       payments: [{ method: "Cash", amount: 0 }],
     }),
   setCustomer: (c) =>
@@ -97,9 +117,24 @@ export const useCart = create<State & Actions>((set, get) => ({
     }),
   setLoyaltyRedeem: (n) => set({ loyaltyRedeem: Math.max(0, Math.min(n, get().loyaltyAvailable)) }),
   setInvoiceDiscount: (n) => set({ invoiceDiscount: Math.max(0, n) }),
+  setExchange: (amount, notes) => set({ exchangeAmount: Math.max(0, amount), exchangeNotes: notes }),
   toggleGst: (v) => set((s) => ({ gstEnabled: v ?? !s.gstEnabled })),
   setPayments: (p) => set({ payments: p }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  loadCart: (cartState) =>
+    set({
+      lines: cartState.lines,
+      customerId: cartState.customerId,
+      customerMobile: cartState.customerMobile,
+      customerName: cartState.customerName,
+      loyaltyAvailable: cartState.loyaltyAvailable,
+      loyaltyRedeem: cartState.loyaltyRedeem,
+      invoiceDiscount: cartState.invoiceDiscount,
+      exchangeAmount: cartState.exchangeAmount || 0,
+      exchangeNotes: cartState.exchangeNotes || "",
+      gstEnabled: cartState.gstEnabled,
+      payments: cartState.payments,
+    }),
 }));
 
 export function computeTotals(s: State) {
@@ -110,7 +145,7 @@ export function computeTotals(s: State) {
     subtotal += gross;
     if (s.gstEnabled) gstAmount += (gross * (l.gst_rate || 0)) / 100;
   }
-  const afterInvDisc = Math.max(0, subtotal - s.invoiceDiscount - s.loyaltyRedeem);
+  const afterInvDisc = Math.max(0, subtotal - s.invoiceDiscount - s.loyaltyRedeem - (s.exchangeAmount || 0));
   const total = afterInvDisc + gstAmount;
   return { subtotal, gstAmount, total };
 }

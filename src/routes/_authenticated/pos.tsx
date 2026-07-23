@@ -1,11 +1,12 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, InventoryItem } from "@/lib/db/db";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useCart, computeTotals, type PaymentSplit } from "@/lib/cart-store";
+import { useCart, computeTotals } from "@/lib/cart-store";
 import { inr, qty } from "@/lib/format";
-import { Trash2, ScanBarcode, UserPlus, Search, Printer, Share2, CheckCircle2, Percent, AlertTriangle, Store, Warehouse } from "lucide-react";
+import { Trash2, ScanBarcode, UserPlus, Search, Printer, ChevronDown, Percent, RotateCcw, Bookmark, X } from "lucide-react";
+import { BillViewerModal } from "@/components/BillViewerModal";
 
 export const Route = createFileRoute("/_authenticated/pos")({ component: POSPage });
 
@@ -14,9 +15,84 @@ function POSPage() {
   const totals = computeTotals(cart as any);
   const [scan, setScan] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedPrinter, setSelectedPrinter] = useState<string>("thermal");
+  const [printedInvoiceData, setPrintedInvoiceData] = useState<{ invoice: any; items: any[] } | null>(null);
+  const [showHeldBillsModal, setShowHeldBillsModal] = useState(false);
+  const [heldBills, setHeldBills] = useState<any[]>([]);
   const scanRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
   const qc = useQueryClient();
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("pos_held_bills");
+      if (stored) {
+        setHeldBills(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  function handleHoldBill() {
+    if (cart.lines.length === 0) return;
+    const newHold = {
+      id: "hold-" + Date.now(),
+      timestamp: new Date().toISOString(),
+      customerName: cart.customerName || "Walk-in Customer",
+      customerMobile: cart.customerMobile || "",
+      lines: cart.lines,
+      customerId: cart.customerId,
+      loyaltyAvailable: cart.loyaltyAvailable,
+      loyaltyRedeem: cart.loyaltyRedeem,
+      invoiceDiscount: cart.invoiceDiscount,
+      gstEnabled: cart.gstEnabled,
+      payments: cart.payments,
+    };
+    const updated = [newHold, ...heldBills];
+    setHeldBills(updated);
+    localStorage.setItem("pos_held_bills", JSON.stringify(updated));
+    cart.clear();
+    toast.success("Bill put on hold successfully!");
+  }
+
+  function handleResumeBill(hold: any) {
+    cart.loadCart({
+      lines: hold.lines,
+      customerId: hold.customerId,
+      customerMobile: hold.customerMobile,
+      customerName: hold.customerName,
+      loyaltyAvailable: hold.loyaltyAvailable,
+      loyaltyRedeem: hold.loyaltyRedeem,
+      invoiceDiscount: hold.invoiceDiscount,
+      gstEnabled: hold.gstEnabled,
+      payments: hold.payments,
+    });
+    const updated = heldBills.filter((b) => b.id !== hold.id);
+    setHeldBills(updated);
+    localStorage.setItem("pos_held_bills", JSON.stringify(updated));
+    setShowHeldBillsModal(false);
+    toast.success(`Resumed bill for ${hold.customerName}`);
+  }
+
+  function handleDeleteHeldBill(holdId: string) {
+    const updated = heldBills.filter((b) => b.id !== holdId);
+    setHeldBills(updated);
+    localStorage.setItem("pos_held_bills", JSON.stringify(updated));
+    toast.success("Held bill deleted");
+  }
+
+  // Fetch real installed printers from server
+  const printersQuery = useQuery({
+    queryKey: ["system-printers"],
+    queryFn: async () => {
+      const res = await fetch("/api/printers");
+      if (!res.ok) return { printers: [] as string[] };
+      return res.json() as Promise<{ printers: string[] }>;
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+  const systemPrinters: string[] = printersQuery.data?.printers ?? [];
 
   useEffect(() => { scanRef.current?.focus(); }, []);
 
@@ -116,16 +192,18 @@ function POSPage() {
     }
   }
 
-  const checkout = useMutation({
+  // Save & Print — creates invoice in SQLite database and opens inline receipt modal
+  const savePrint = useMutation({
     mutationFn: async () => {
       if (cart.lines.length === 0) throw new Error("Cart is empty");
-
       const saleData = {
         customer_id: cart.customerId || undefined,
         customer_name: cart.customerName || "Walk-in Customer",
         customer_mobile: cart.customerMobile || "",
         invoice_type: (cart.gstEnabled ? "GST" : "NON_GST") as any,
         discount_amount: cart.invoiceDiscount,
+        exchange_amount: cart.exchangeAmount,
+        exchange_notes: cart.exchangeNotes,
         payment_method: (cart.payments[0]?.method?.toUpperCase() || "CASH") as any,
         loyalty_points_redeemed: cart.loyaltyRedeem,
         items: cart.lines.map((l) => ({
@@ -137,19 +215,29 @@ function POSPage() {
           tax_rate: l.gst_rate,
         })),
       };
-
-      const createdInvoice = db.createInvoice(saleData);
-      return createdInvoice;
+      return await db.createInvoice(saleData);
     },
     onSuccess: (inv) => {
-      toast.success(`Invoice ${inv.invoice_number} saved & ready in Billing Hub!`);
+      toast.success(`Invoice ${inv.invoice_number} saved!`);
+      const invItems = db.getInvoice(inv.id)?.items || cart.lines.map((l) => ({
+        id: 'ii-' + Math.random(),
+        invoice_id: inv.id,
+        product_id: l.product_id,
+        barcode: l.barcode || '',
+        product_name: l.name,
+        qty: l.qty,
+        unit_price: l.price,
+        tax_rate: l.gst_rate,
+        total_price: l.qty * l.price,
+      }));
+      setPrintedInvoiceData({ invoice: inv, items: invItems });
       cart.clear();
       qc.invalidateQueries();
-      navigate({ to: "/invoices/$id", params: { id: inv.id } });
     },
     onError: (e: any) => toast.error(e.message),
   });
 
+  const isPending = savePrint.isPending;
   const payTotal = cart.payments.reduce((s, p) => s + Number(p.amount || 0), 0);
 
   return (
@@ -336,7 +424,7 @@ function POSPage() {
           <div className="flex gap-2">
             <input
               value={cart.customerMobile}
-              onChange={(e) => cart.setCustomer({ id: cart.customerId, mobile: e.target.value, name: cart.customerName, loyalty: cart.customerLoyalty })}
+              onChange={(e) => cart.setCustomer({ id: cart.customerId, mobile: e.target.value, name: cart.customerName, loyalty: cart.loyaltyAvailable })}
               onBlur={(e) => lookupCustomer(e.target.value)}
               placeholder="Customer Mobile (10 digits)"
               className="flex-1 h-9 px-3 rounded bg-input border border-border text-xs font-mono focus:border-primary text-foreground"
@@ -345,17 +433,17 @@ function POSPage() {
 
           <input
             value={cart.customerName}
-            onChange={(e) => cart.setCustomer({ id: cart.customerId, mobile: cart.customerMobile, name: e.target.value, loyalty: cart.customerLoyalty })}
+            onChange={(e) => cart.setCustomer({ id: cart.customerId, mobile: cart.customerMobile, name: e.target.value, loyalty: cart.loyaltyAvailable })}
             placeholder="Customer Name (Walk-in Customer)"
             className="w-full h-9 px-3 rounded bg-input border border-border text-xs font-mono text-foreground"
           />
 
-          {cart.customerLoyalty > 0 && (
+          {cart.loyaltyAvailable > 0 && (
             <div className="p-2.5 bg-primary/10 border border-primary/30 rounded flex justify-between items-center text-xs">
-              <span className="font-semibold text-primary">Loyalty Points Available: {cart.customerLoyalty}</span>
+              <span className="font-semibold text-primary">Loyalty Points Available: {cart.loyaltyAvailable}</span>
               <button
                 type="button"
-                onClick={() => cart.setLoyaltyRedeem(Math.min(cart.customerLoyalty, totals.grandTotal))}
+                onClick={() => cart.setLoyaltyRedeem(Math.min(cart.loyaltyAvailable, totals.total))}
                 className="px-2 py-1 bg-primary text-primary-foreground rounded text-[10px] font-bold"
               >
                 Redeem
@@ -373,7 +461,7 @@ function POSPage() {
             <div className="text-[10px] text-muted-foreground">Includes SGST & CGST Breakdown</div>
           </div>
           <button
-            onClick={() => cart.setGstEnabled(!cart.gstEnabled)}
+            onClick={() => cart.toggleGst(!cart.gstEnabled)}
             className={`h-7 px-3 rounded-full text-xs font-bold transition border ${
               cart.gstEnabled ? "bg-emerald-500 text-white border-emerald-400" : "bg-muted text-muted-foreground border-border"
             }`}
@@ -398,11 +486,11 @@ function POSPage() {
               <>
                 <div className="flex justify-between text-xs font-mono text-emerald-400">
                   <span>CGST (Output Tax):</span>
-                  <span>{inr(totals.cgst)}</span>
+                  <span>{inr(totals.gstAmount / 2)}</span>
                 </div>
                 <div className="flex justify-between text-xs font-mono text-emerald-400">
                   <span>SGST (Output Tax):</span>
-                  <span>{inr(totals.sgst)}</span>
+                  <span>{inr(totals.gstAmount / 2)}</span>
                 </div>
               </>
             )}
@@ -425,22 +513,190 @@ function POSPage() {
               </div>
             )}
 
+            {/* Exchange Section */}
+            <div className="border-t border-dashed border-border/60 my-2 pt-2 space-y-1.5">
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span className="text-amber-500 font-bold">Exchange Value (₹):</span>
+                <input
+                  type="number"
+                  value={cart.exchangeAmount || ""}
+                  onChange={(e) => cart.setExchange(parseFloat(e.target.value) || 0, cart.exchangeNotes)}
+                  placeholder="0"
+                  className="w-20 h-7 rounded bg-input border border-border text-right px-2 font-bold text-amber-500 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span className="text-muted-foreground">Exchange Notes:</span>
+                <input
+                  type="text"
+                  value={cart.exchangeNotes}
+                  onChange={(e) => cart.setExchange(cart.exchangeAmount, e.target.value)}
+                  placeholder="e.g. Old Cooker"
+                  className="w-36 h-7 rounded bg-input border border-border text-right px-2 text-foreground text-[10px]"
+                />
+              </div>
+            </div>
+
+            {cart.exchangeAmount > 0 && (
+              <div className="flex justify-between text-xs font-mono text-amber-500 font-semibold">
+                <span>Exchange ({cart.exchangeNotes || "Old Item"}):</span>
+                <span>-{inr(cart.exchangeAmount)}</span>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-border flex justify-between items-center">
               <span className="text-sm font-bold text-foreground">Grand Total:</span>
-              <span className="text-2xl font-black font-mono text-primary">{inr(totals.grandTotal)}</span>
+              <span className="text-2xl font-black font-mono text-primary">{inr(totals.total)}</span>
             </div>
           </div>
 
+          {/* Printer selector — live from OS */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Printer className="h-3 w-3" />
+              Print Destination
+              {printersQuery.isFetching && (
+                <span className="text-[9px] text-primary animate-pulse">detecting...</span>
+              )}
+            </label>
+            <div className="relative">
+              <select
+                value={selectedPrinter}
+                onChange={(e) => setSelectedPrinter(e.target.value)}
+                className="w-full h-9 rounded bg-input border border-border px-3 pr-8 text-xs font-mono font-semibold text-foreground appearance-none cursor-pointer"
+              >
+                {/* Thermal receipt option default */}
+                <option value="thermal">🖨️ Thermal Printer (80mm receipt)</option>
+                {/* Save as PDF */}
+                <option value="__pdf__">📄 A4 Paper / Save as PDF</option>
+                {/* Divider */}
+                {systemPrinters.length > 0 && (
+                  <option disabled value="">── Connected System Printers ──</option>
+                )}
+                {/* Real system printers */}
+                {systemPrinters.map((p) => (
+                  <option key={p} value={p}>🖨️ {p}</option>
+                ))}
+              </select>
+              <ChevronDown className="h-3.5 w-3.5 absolute right-2.5 top-2.5 text-muted-foreground pointer-events-none" />
+            </div>
+            <div className="text-[9px] text-muted-foreground">
+              {selectedPrinter === "__pdf__"
+                ? "Will open A4 invoice → browser print dialog → Save as PDF"
+                : `Will open 80mm receipt → browser sends to “${selectedPrinter === 'thermal' ? 'Thermal Printer' : selectedPrinter}”`}
+            </div>
+          </div>
+
+          {/* Hold & Recall Actions */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              disabled={cart.lines.length === 0}
+              onClick={handleHoldBill}
+              className="h-9 rounded-lg bg-secondary hover:bg-muted border border-border text-foreground text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCcw className="h-3.5 w-3.5 rotate-180 text-amber-400" /> Hold Bill
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowHeldBillsModal(true)}
+              className="h-9 rounded-lg bg-secondary hover:bg-muted border border-border text-foreground text-xs font-bold transition flex items-center justify-center gap-1.5 relative"
+            >
+              <Bookmark className="h-3.5 w-3.5 text-primary" /> Recall ({heldBills.length})
+            </button>
+          </div>
+
+          {/* Checkout Action Button */}
           <button
-            disabled={cart.lines.length === 0 || checkout.isPending}
-            onClick={() => checkout.mutate()}
-            className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-black text-sm uppercase tracking-wider hover:accent-glow transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            disabled={cart.lines.length === 0 || isPending}
+            onClick={() => savePrint.mutate()}
+            className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-black text-sm uppercase tracking-wider hover:opacity-90 transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Printer className="h-5 w-5" />
-            {checkout.isPending ? "Processing Invoice..." : "Save & Print Receipt"}
+            {savePrint.isPending ? "Saving Invoice..." : "Save & Print Receipt"}
           </button>
         </div>
       </div>
+
+      {printedInvoiceData && (
+        <BillViewerModal
+          invoiceData={printedInvoiceData}
+          initialMode={selectedPrinter === "__pdf__" ? "a4" : "thermal"}
+          autoPrintOnMount
+          onClose={() => {
+            setPrintedInvoiceData(null);
+            setTimeout(() => scanRef.current?.focus(), 100);
+          }}
+        />
+      )}
+
+      {/* Held Bills modal overlay */}
+      {showHeldBillsModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4 print:hidden"
+          onClick={() => setShowHeldBillsModal(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4"
+          >
+            <div className="flex justify-between items-center border-b border-border pb-2">
+              <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                <Bookmark className="h-4 w-4 text-primary" /> Held Bills / Draft Carts
+              </h3>
+              <button
+                onClick={() => setShowHeldBillsModal(false)}
+                className="h-7 w-7 rounded-lg hover:bg-muted text-muted-foreground flex items-center justify-center"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {heldBills.length === 0 ? (
+                <div className="text-center py-8 text-xs text-muted-foreground italic">
+                  No bills currently on hold.
+                </div>
+              ) : (
+                heldBills.map((b) => {
+                  const date = new Date(b.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  const itemsCount = b.lines.length;
+                  const total = b.lines.reduce((s: number, l: any) => s + (l.qty * l.price), 0);
+                  return (
+                    <div
+                      key={b.id}
+                      className="p-3 bg-secondary/40 border border-border rounded-lg flex justify-between items-center text-xs hover:bg-secondary transition"
+                    >
+                      <div>
+                        <div className="font-bold text-foreground">
+                          {b.customerName} {b.customerMobile ? `(${b.customerMobile})` : ""}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+                          Held: {date} • {itemsCount} items • Total: ₹{total.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          onClick={() => handleDeleteHeldBill(b.id)}
+                          className="h-7 px-2.5 rounded bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 font-bold transition text-[10px] uppercase"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => handleResumeBill(b)}
+                          className="h-7 px-3 rounded bg-primary text-primary-foreground font-bold hover:opacity-90 transition text-[10px] uppercase"
+                        >
+                          Resume
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
