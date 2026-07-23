@@ -73,6 +73,17 @@ export default {
 
           if (action === "upsert") {
             await SQLiteDatabaseManager.upsertRow(table, data);
+          } else if (action === "upsert_invoice") {
+            const { invoice, items } = body;
+            await SQLiteDatabaseManager.upsertRow("invoices", invoice);
+            const dbConn = SQLiteDatabaseManager.getDB();
+            await dbConn.run("DELETE FROM invoice_items WHERE invoice_id = ? OR invoice_id = ?", [
+              invoice.id,
+              invoice.invoice_number,
+            ]);
+            for (const item of items) {
+              await SQLiteDatabaseManager.upsertRow("invoice_items", item);
+            }
           } else if (action === "delete") {
             await SQLiteDatabaseManager.deleteRow(table, id);
           } else if (action === "reset") {

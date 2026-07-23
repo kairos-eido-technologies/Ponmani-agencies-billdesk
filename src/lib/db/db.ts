@@ -240,6 +240,23 @@ function postRowToSQLite(action: 'upsert' | 'delete' | 'reset', table?: string, 
   });
 }
 
+function postInvoiceToSQLite(invoice: any, items: any[]): Promise<any> | void {
+  if (isSyncingFromSQLite) return;
+  if (typeof window === 'undefined') return;
+
+  return fetch('/api/db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'upsert_invoice',
+      invoice,
+      items,
+    }),
+  }).catch((err) => {
+    console.warn('[SQLite Sync Error] Failed mirroring invoice to server:', err);
+  });
+}
+
 // Dexie Database Declaration
 class PonmaniDatabase extends Dexie {
   users!: Table<User>;
@@ -282,7 +299,7 @@ class PonmaniDatabase extends Dexie {
     // Automatically mirror writes to local SQLite server in background
     const tables = [
       'users', 'inventory', 'vendors', 'purchase_orders', 'purchase_items',
-      'customers', 'loyalty_ledger', 'invoices', 'invoice_items',
+      'customers', 'loyalty_ledger',
       'service_tickets', 'scrap_entries', 'godown_transfers', 'backups_log', 'settings'
     ];
 
@@ -1081,12 +1098,12 @@ class OfflineDB {
     // Save to local IndexedDB & await server SQLite database sync
     if (typeof window !== 'undefined' && this.dexieDb) {
       await this.dexieDb.invoices.add(newInvoice).catch(console.error);
-      await postRowToSQLite('upsert', 'invoices', newInvoice);
-
       for (const item of invItems) {
         await this.dexieDb.invoice_items.add(item).catch(console.error);
-        await postRowToSQLite('upsert', 'invoice_items', item);
       }
+
+      // Single atomic post for invoice + items
+      await postInvoiceToSQLite(newInvoice, invItems);
 
       for (const item of saleData.items) {
         const invProd = this.memoryData.inventory.find((i) => i.id === item.product_id);
@@ -1225,19 +1242,19 @@ class OfflineDB {
     // 6. Persist to Dexie and SQLite
     if (typeof window !== 'undefined' && this.dexieDb) {
       await this.dexieDb.invoices.put(invoice).catch(console.error);
-      await postRowToSQLite('upsert', 'invoices', invoice);
 
-      // Delete old items
+      // Delete old items locally
       for (const orig of originalItems) {
         await this.dexieDb.invoice_items.delete(orig.id).catch(console.error);
-        await postRowToSQLite('delete', 'invoice_items', undefined, orig.id);
       }
 
-      // Save new items
+      // Save new items locally
       for (const item of newInvItems) {
         await this.dexieDb.invoice_items.put(item).catch(console.error);
-        await postRowToSQLite('upsert', 'invoice_items', item);
       }
+
+      // Single atomic post for invoice + items
+      await postInvoiceToSQLite(invoice, newInvItems);
 
       // Update inventory levels in Dexie/SQLite for any modified products
       const modifiedProductIds = new Set([
