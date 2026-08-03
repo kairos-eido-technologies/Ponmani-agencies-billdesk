@@ -334,7 +334,8 @@ function GSTPage() {
   ];
 
   return (
-    <div className="p-6 space-y-5">
+    <>
+      <div className="p-6 space-y-5 print:hidden">
       <PageHeader
         title="GST Compliance & Filing Center"
         subtitle={`Tamil Nadu GST (State Code 33) — GSTR-1 & GSTR-3B Reports | ${store?.settings?.shop_gstin || "GSTIN not configured"}`}
@@ -868,10 +869,12 @@ function GSTPage() {
         </div>
       )}
 
+      </div>
+
       {/* ── GST Report Print Modal ──────────────────────────────────────── */}
       {showReportModal && store && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col print:bg-white print:inset-auto"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col print:bg-white print:inset-auto print:static print:block"
           onClick={() => setShowReportModal(false)}
         >
           {/* Toolbar */}
@@ -910,6 +913,6 @@ function GSTPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

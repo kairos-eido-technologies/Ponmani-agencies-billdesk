@@ -182,12 +182,27 @@
     max-height: none !important;
   }
 
-  /* Force clean black text for thermal printers */
+  /* Force clean black text for thermal receipts */
   .thermal-receipt * {
     color: #000000 !important;
     border-color: #000000 !important;
     text-shadow: none !important;
     box-shadow: none !important;
+  }
+
+  /* A4 GST Report Print Spec */
+  .a4-gst-report {
+    width: 210mm !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* When printing GST report modal, force print container to be visible and unclipped */
+  body:has(.a4-gst-report) .print\:hidden {
+    display: none !important;
   }
 }
 
