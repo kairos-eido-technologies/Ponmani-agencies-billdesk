@@ -394,4 +394,66 @@ export class SQLiteDatabaseManager {
       await db.run(`DELETE FROM ${table}`);
     }
   }
+
+  /**
+   * High-performance bulk seed store in a single SQLite transaction
+   */
+  public static async bulkSeedStore(store: any): Promise<void> {
+    const db = this.getDB();
+    await this.initializeSchema();
+
+    await db.exec('BEGIN TRANSACTION;');
+    try {
+      const tables = [
+        'users', 'inventory', 'vendors', 'purchase_orders', 'purchase_items',
+        'customers', 'loyalty_ledger', 'invoices', 'invoice_items',
+        'service_tickets', 'scrap_entries', 'godown_transfers', 'backups_log', 'settings'
+      ];
+
+      for (const table of tables) {
+        await db.run(`DELETE FROM ${table}`);
+      }
+
+      for (const table of tables) {
+        if (table === 'settings') {
+          const settingsObj = store.settings || {};
+          for (const [key, value] of Object.entries(settingsObj)) {
+            const val = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [key, val]);
+          }
+          continue;
+        }
+
+        const rows = store[table] || [];
+        if (!rows.length) continue;
+
+        const tableCols = await this.getTableColumns(table);
+        for (const data of rows) {
+          if (table === 'vendors') {
+            if (data.phone && !data.mobile) data.mobile = data.phone;
+            if (data.mobile && !data.phone) data.phone = data.mobile;
+          }
+
+          let keys = Object.keys(data);
+          if (tableCols.size > 0) {
+            keys = keys.filter((k) => tableCols.has(k));
+          }
+          if (keys.length === 0) continue;
+
+          const placeholders = keys.map(() => '?').join(', ');
+          const columns = keys.join(', ');
+          const values = keys.map((k) => (typeof data[k] === 'object' && data[k] !== null ? JSON.stringify(data[k]) : data[k]));
+
+          const sql = `INSERT OR REPLACE INTO ${table} (${columns}) VALUES (${placeholders})`;
+          await db.run(sql, values);
+        }
+      }
+
+      await db.exec('COMMIT;');
+    } catch (err) {
+      await db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
 }
+

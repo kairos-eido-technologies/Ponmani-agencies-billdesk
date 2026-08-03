@@ -468,107 +468,8 @@ class OfflineDB {
       await fetch('/api/db', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reset' }),
+        body: JSON.stringify({ action: 'bulk_seed', store }),
       });
-
-      for (const user of store.users) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'users', data: user }),
-        });
-      }
-      for (const item of store.inventory) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'inventory', data: item }),
-        });
-      }
-      for (const vendor of store.vendors) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'vendors', data: vendor }),
-        });
-      }
-      for (const po of store.purchase_orders) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'purchase_orders', data: po }),
-        });
-      }
-      for (const item of store.purchase_items) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'purchase_items', data: item }),
-        });
-      }
-      for (const c of store.customers) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'customers', data: c }),
-        });
-      }
-      for (const ledger of store.loyalty_ledger) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'loyalty_ledger', data: ledger }),
-        });
-      }
-      for (const inv of store.invoices) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'invoices', data: inv }),
-        });
-      }
-      for (const item of store.invoice_items) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'invoice_items', data: item }),
-        });
-      }
-      for (const ticket of store.service_tickets) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'service_tickets', data: ticket }),
-        });
-      }
-      for (const scrap of store.scrap_entries) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'scrap_entries', data: scrap }),
-        });
-      }
-      for (const transfer of store.godown_transfers) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'godown_transfers', data: transfer }),
-        });
-      }
-      for (const log of store.backups_log) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'backups_log', data: log }),
-        });
-      }
-      for (const [key, value] of Object.entries(store.settings)) {
-        await fetch('/api/db', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upsert', table: 'settings', data: { key, value } }),
-        });
-      }
       isSyncingFromSQLite = false;
     } catch (e) {
       console.error('[SQLite Server] Seeding/Syncing store failed:', e);
@@ -783,8 +684,9 @@ class OfflineDB {
       settings: seed.settings as any,
     };
 
-    // Mirror to SQLite server in background
-    this.syncLocalStoreToSQLite(this.memoryData).catch(console.warn);
+    // Sync to SQLite server (instant bulk_seed single transaction)
+    log('Syncing to server database...');
+    await this.syncLocalStoreToSQLite(this.memoryData);
     log('Seed complete!');
   }
 

@@ -73,6 +73,9 @@ export default {
 
           if (action === "upsert") {
             await SQLiteDatabaseManager.upsertRow(table, data);
+          } else if (action === "bulk_seed") {
+            const { store } = body;
+            await SQLiteDatabaseManager.bulkSeedStore(store);
           } else if (action === "upsert_invoice") {
             const { invoice, items } = body;
             await SQLiteDatabaseManager.upsertRow("invoices", invoice);
