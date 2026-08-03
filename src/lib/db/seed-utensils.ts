@@ -1,187 +1,84 @@
 /**
- * Ponmani Utensils & Kitchen Store — Realistic Seed Data Generator
- * Covers: Inventory, Vendors, Customers, Purchase Orders, Invoices,
- *         Service Tickets, Scrap Entries, Godown Transfers
- * ~5000+ records across all tables
+ * Ponmani Utensils & Kitchen Store — High Capacity Seed Data Generator
+ * Multi-thousand records across ALL modules:
+ * Inventory (1,200+), Customers (2,000+), Vendors (50+),
+ * Purchase Orders (1,000+), Invoices (5,000+), Invoice Items (15,000+),
+ * Service Tickets (1,000+), Scrap Entries (1,000+), Godown Transfers (1,000+)
  */
 
-// ─── Utensils & Kitchen Product Catalog ─────────────────────────────────────
-
-const PRODUCTS_CATALOG = [
-  // Cookware
-  { name: "Hawkins Pressure Cooker 3L", cat: "Pressure Cookers", cost: 750, sell: 950, gst: 12, unit: "PCS", barcode: "HC001" },
-  { name: "Hawkins Pressure Cooker 5L", cat: "Pressure Cookers", cost: 950, sell: 1200, gst: 12, unit: "PCS", barcode: "HC002" },
-  { name: "Prestige Pressure Cooker 3L", cat: "Pressure Cookers", cost: 780, sell: 980, gst: 12, unit: "PCS", barcode: "HC003" },
-  { name: "Prestige Pressure Cooker 5L", cat: "Pressure Cookers", cost: 990, sell: 1250, gst: 12, unit: "PCS", barcode: "HC004" },
-  { name: "Vinod Pressure Cooker 2L", cat: "Pressure Cookers", cost: 680, sell: 850, gst: 12, unit: "PCS", barcode: "HC005" },
-  { name: "Pigeon Pressure Cooker 3L", cat: "Pressure Cookers", cost: 620, sell: 790, gst: 12, unit: "PCS", barcode: "HC006" },
-  { name: "Hawkins Futura Non-Stick Kadhai 3L", cat: "Non-Stick Cookware", cost: 1100, sell: 1450, gst: 12, unit: "PCS", barcode: "NS001" },
-  { name: "Prestige Non-Stick Tawa 25cm", cat: "Non-Stick Cookware", cost: 380, sell: 520, gst: 12, unit: "PCS", barcode: "NS002" },
-  { name: "Tefal Non-Stick Fry Pan 24cm", cat: "Non-Stick Cookware", cost: 850, sell: 1100, gst: 12, unit: "PCS", barcode: "NS003" },
-  { name: "Pigeon Non-Stick Kadhai 2.5L", cat: "Non-Stick Cookware", cost: 450, sell: 620, gst: 12, unit: "PCS", barcode: "NS004" },
-  { name: "Prestige Hard Anodised Kadhai 4L", cat: "Hard Anodised", cost: 1200, sell: 1600, gst: 12, unit: "PCS", barcode: "HA001" },
-  { name: "Hawkins Hard Anodised Pressure Pan 3L", cat: "Hard Anodised", cost: 1050, sell: 1380, gst: 12, unit: "PCS", barcode: "HA002" },
-  { name: "Stainless Steel Kadhai 30cm", cat: "Stainless Steel", cost: 420, sell: 580, gst: 18, unit: "PCS", barcode: "SS001" },
-  { name: "Stainless Steel Sauce Pan 16cm", cat: "Stainless Steel", cost: 280, sell: 390, gst: 18, unit: "PCS", barcode: "SS002" },
-  { name: "Stainless Steel Fry Pan 24cm", cat: "Stainless Steel", cost: 350, sell: 480, gst: 18, unit: "PCS", barcode: "SS003" },
-  { name: "Stainless Steel Milk Pan 1L", cat: "Stainless Steel", cost: 180, sell: 250, gst: 18, unit: "PCS", barcode: "SS004" },
-  { name: "Stainless Steel Cooking Pot 5L", cat: "Stainless Steel", cost: 480, sell: 650, gst: 18, unit: "PCS", barcode: "SS005" },
-  { name: "Stainless Steel Biriyani Pot 10L", cat: "Stainless Steel", cost: 780, sell: 1050, gst: 18, unit: "PCS", barcode: "SS006" },
-  { name: "Cast Iron Tawa 30cm", cat: "Cast Iron", cost: 650, sell: 890, gst: 12, unit: "PCS", barcode: "CI001" },
-  { name: "Cast Iron Kadhai 3L", cat: "Cast Iron", cost: 890, sell: 1200, gst: 12, unit: "PCS", barcode: "CI002" },
-  // Dinner Sets
-  { name: "Milton Melamine Dinner Set 19pcs", cat: "Dinner Sets", cost: 780, sell: 1050, gst: 12, unit: "SET", barcode: "DS001" },
-  { name: "Borosil Glass Dinner Set 14pcs", cat: "Dinner Sets", cost: 1200, sell: 1650, gst: 12, unit: "SET", barcode: "DS002" },
-  { name: "Stainless Steel Dinner Set 26pcs", cat: "Dinner Sets", cost: 950, sell: 1290, gst: 18, unit: "SET", barcode: "DS003" },
-  { name: "Ceramic Dinner Set 12pcs", cat: "Dinner Sets", cost: 1100, sell: 1500, gst: 12, unit: "SET", barcode: "DS004" },
-  // Bottles & Containers
-  { name: "Milton Thermosteel Flask 1L", cat: "Flasks & Bottles", cost: 420, sell: 580, gst: 12, unit: "PCS", barcode: "FL001" },
-  { name: "Milton Thermosteel Flask 500ml", cat: "Flasks & Bottles", cost: 320, sell: 450, gst: 12, unit: "PCS", barcode: "FL002" },
-  { name: "Borosil Flask 500ml", cat: "Flasks & Bottles", cost: 380, sell: 520, gst: 12, unit: "PCS", barcode: "FL003" },
-  { name: "Cello Puro Water Bottle 1L", cat: "Flasks & Bottles", cost: 180, sell: 260, gst: 12, unit: "PCS", barcode: "FL004" },
-  { name: "Milton Steel Water Bottle 750ml", cat: "Flasks & Bottles", cost: 220, sell: 320, gst: 12, unit: "PCS", barcode: "FL005" },
-  { name: "Lock & Lock Airtight Container 1L", cat: "Storage Containers", cost: 180, sell: 260, gst: 12, unit: "PCS", barcode: "SC001" },
-  { name: "Tupperware Container Set 4pcs", cat: "Storage Containers", cost: 520, sell: 720, gst: 12, unit: "SET", barcode: "SC002" },
-  { name: "Borosil Mixing Bowl Set 3pcs", cat: "Storage Containers", cost: 450, sell: 620, gst: 12, unit: "SET", barcode: "SC003" },
-  { name: "Stainless Steel Dabba Container 3L", cat: "Storage Containers", cost: 280, sell: 390, gst: 18, unit: "PCS", barcode: "SC004" },
-  // Appliances
-  { name: "Butterfly Wet Grinder 2L Table Top", cat: "Kitchen Appliances", cost: 3500, sell: 4500, gst: 18, unit: "PCS", barcode: "KA001" },
-  { name: "Sujata Mixer Grinder 750W", cat: "Kitchen Appliances", cost: 2800, sell: 3600, gst: 18, unit: "PCS", barcode: "KA002" },
-  { name: "Preethi Mixer Grinder 750W", cat: "Kitchen Appliances", cost: 3200, sell: 4100, gst: 18, unit: "PCS", barcode: "KA003" },
-  { name: "Bajaj Mixer Grinder 500W", cat: "Kitchen Appliances", cost: 1800, sell: 2400, gst: 18, unit: "PCS", barcode: "KA004" },
-  { name: "Prestige Induction Cooktop 1600W", cat: "Kitchen Appliances", cost: 1600, sell: 2100, gst: 18, unit: "PCS", barcode: "KA005" },
-  { name: "Pigeon Induction Cooktop 1800W", cat: "Kitchen Appliances", cost: 1400, sell: 1850, gst: 18, unit: "PCS", barcode: "KA006" },
-  { name: "Philips Hand Blender 600W", cat: "Kitchen Appliances", cost: 1200, sell: 1600, gst: 18, unit: "PCS", barcode: "KA007" },
-  { name: "Bajaj Toaster 2-Slice", cat: "Kitchen Appliances", cost: 800, sell: 1050, gst: 18, unit: "PCS", barcode: "KA008" },
-  { name: "Prestige Electric Kettle 1.5L", cat: "Kitchen Appliances", cost: 680, sell: 900, gst: 18, unit: "PCS", barcode: "KA009" },
-  { name: "Butterfly LPG Stove 2-Burner", cat: "Kitchen Appliances", cost: 1900, sell: 2500, gst: 18, unit: "PCS", barcode: "KA010" },
-  // Cutlery & Utensils
-  { name: "Stainless Steel Spoon Set 6pcs", cat: "Cutlery", cost: 90, sell: 130, gst: 18, unit: "SET", barcode: "CU001" },
-  { name: "Stainless Steel Fork Set 6pcs", cat: "Cutlery", cost: 90, sell: 130, gst: 18, unit: "SET", barcode: "CU002" },
-  { name: "Stainless Steel Knife Set 3pcs", cat: "Cutlery", cost: 180, sell: 260, gst: 18, unit: "SET", barcode: "CU003" },
-  { name: "Kitchen Scissors Stainless Steel", cat: "Cutlery", cost: 120, sell: 180, gst: 18, unit: "PCS", barcode: "CU004" },
-  { name: "Ladle Set 5pcs Stainless Steel", cat: "Cooking Tools", cost: 220, sell: 320, gst: 18, unit: "SET", barcode: "CT001" },
-  { name: "Turner Spatula Stainless Steel", cat: "Cooking Tools", cost: 80, sell: 120, gst: 18, unit: "PCS", barcode: "CT002" },
-  { name: "Strainer Colander 26cm", cat: "Cooking Tools", cost: 150, sell: 220, gst: 18, unit: "PCS", barcode: "CT003" },
-  { name: "Idli Stand 4-Plate Stainless", cat: "Cooking Tools", cost: 280, sell: 390, gst: 18, unit: "PCS", barcode: "CT004" },
-  { name: "Dosa Tawa Flat 30cm Iron", cat: "Cooking Tools", cost: 280, sell: 380, gst: 12, unit: "PCS", barcode: "CT005" },
-  { name: "Rolling Pin Belan Wooden", cat: "Cooking Tools", cost: 60, sell: 90, gst: 5, unit: "PCS", barcode: "CT006" },
-  { name: "Chapati Press Roti Maker", cat: "Cooking Tools", cost: 380, sell: 520, gst: 12, unit: "PCS", barcode: "CT007" },
-  { name: "Mortar Pestle Stone Small", cat: "Cooking Tools", cost: 180, sell: 260, gst: 5, unit: "PCS", barcode: "CT008" },
-  { name: "Vegetable Peeler Stainless", cat: "Cooking Tools", cost: 60, sell: 90, gst: 18, unit: "PCS", barcode: "CT009" },
-  { name: "Grater 4-Side Stainless Steel", cat: "Cooking Tools", cost: 90, sell: 130, gst: 18, unit: "PCS", barcode: "CT010" },
-  // Casseroles & Serving
-  { name: "Milton Casserole 2.5L", cat: "Casseroles", cost: 480, sell: 650, gst: 12, unit: "PCS", barcode: "CA001" },
-  { name: "Cello Casserole 3.5L", cat: "Casseroles", cost: 550, sell: 750, gst: 12, unit: "PCS", barcode: "CA002" },
-  { name: "Borosil Opalware Serving Bowl Set", cat: "Serving Ware", cost: 620, sell: 850, gst: 12, unit: "SET", barcode: "SW001" },
-  { name: "Stainless Steel Serving Spoon Set 5pcs", cat: "Serving Ware", cost: 180, sell: 260, gst: 18, unit: "SET", barcode: "SW002" },
-  { name: "Tray Stainless Steel Round 40cm", cat: "Serving Ware", cost: 220, sell: 320, gst: 18, unit: "PCS", barcode: "SW003" },
-  // Specialty
-  { name: "Idiyappam Maker Press Stainless", cat: "Specialty Items", cost: 350, sell: 480, gst: 12, unit: "PCS", barcode: "SP001" },
-  { name: "Puttu Maker Stainless Steel", cat: "Specialty Items", cost: 280, sell: 390, gst: 12, unit: "PCS", barcode: "SP002" },
-  { name: "Appam Kadhai Cast Iron", cat: "Specialty Items", cost: 580, sell: 790, gst: 12, unit: "PCS", barcode: "SP003" },
-  { name: "Murukku Press 10 Disc Stainless", cat: "Specialty Items", cost: 320, sell: 440, gst: 12, unit: "PCS", barcode: "SP004" },
-  { name: "Sambar Vessel 5L Aluminium", cat: "Specialty Items", cost: 380, sell: 520, gst: 18, unit: "PCS", barcode: "SP005" },
-  { name: "Steamer Dhokla Stand 3-Layer", cat: "Specialty Items", cost: 480, sell: 650, gst: 12, unit: "PCS", barcode: "SP006" },
-  // Gas & Cleaning
-  { name: "Cleaning Brush Set 3pcs", cat: "Cleaning Tools", cost: 80, sell: 120, gst: 5, unit: "SET", barcode: "CL001" },
-  { name: "Steel Scrubber Pack 6pcs", cat: "Cleaning Tools", cost: 60, sell: 90, gst: 5, unit: "PACK", barcode: "CL002" },
-  { name: "Dish Rack Stainless Steel", cat: "Cleaning Tools", cost: 420, sell: 580, gst: 18, unit: "PCS", barcode: "CL003" },
-  { name: "Rubber Gloves Kitchen Large", cat: "Cleaning Tools", cost: 60, sell: 90, gst: 5, unit: "PAIR", barcode: "CL004" },
+const BASE_PRODUCTS = [
+  { name: "Pressure Cooker", cat: "Pressure Cookers", cost: 750, sell: 950, gst: 12, unit: "PCS", prefix: "PC" },
+  { name: "Non-Stick Kadhai", cat: "Non-Stick Cookware", cost: 650, sell: 890, gst: 12, unit: "PCS", prefix: "NS" },
+  { name: "Non-Stick Tawa", cat: "Non-Stick Cookware", cost: 380, sell: 520, gst: 12, unit: "PCS", prefix: "NT" },
+  { name: "Hard Anodised Pan", cat: "Hard Anodised", cost: 850, sell: 1150, gst: 12, unit: "PCS", prefix: "HA" },
+  { name: "Stainless Steel Kadhai", cat: "Stainless Steel", cost: 420, sell: 580, gst: 18, unit: "PCS", prefix: "SS" },
+  { name: "Stainless Steel Sauce Pan", cat: "Stainless Steel", cost: 280, sell: 390, gst: 18, unit: "PCS", prefix: "SP" },
+  { name: "Stainless Steel Pot", cat: "Stainless Steel", cost: 480, sell: 650, gst: 18, unit: "PCS", prefix: "POT" },
+  { name: "Cast Iron Dosa Tawa", cat: "Cast Iron", cost: 550, sell: 780, gst: 12, unit: "PCS", prefix: "CI" },
+  { name: "Melamine Dinner Set", cat: "Dinner Sets", cost: 780, sell: 1050, gst: 12, unit: "SET", prefix: "DS" },
+  { name: "Borosil Glassware Set", cat: "Dinner Sets", cost: 1200, sell: 1650, gst: 12, unit: "SET", prefix: "GS" },
+  { name: "Thermosteel Flask", cat: "Flasks & Bottles", cost: 420, sell: 580, gst: 12, unit: "PCS", prefix: "FL" },
+  { name: "Airtight Storage Container", cat: "Storage Containers", cost: 180, sell: 260, gst: 12, unit: "PCS", prefix: "SC" },
+  { name: "Table Top Wet Grinder 2L", cat: "Kitchen Appliances", cost: 3500, sell: 4500, gst: 18, unit: "PCS", prefix: "WG" },
+  { name: "Mixer Grinder 750W", cat: "Kitchen Appliances", cost: 2800, sell: 3600, gst: 18, unit: "PCS", prefix: "MG" },
+  { name: "Induction Cooktop 1800W", cat: "Kitchen Appliances", cost: 1600, sell: 2100, gst: 18, unit: "PCS", prefix: "IC" },
+  { name: "Electric Kettle 1.5L", cat: "Kitchen Appliances", cost: 680, sell: 900, gst: 18, unit: "PCS", prefix: "EK" },
+  { name: "LPG Gas Stove 2-Burner", cat: "Kitchen Appliances", cost: 1900, sell: 2500, gst: 18, unit: "PCS", prefix: "GS" },
+  { name: "Cutlery Set 6pcs", cat: "Cutlery", cost: 120, sell: 180, gst: 18, unit: "SET", prefix: "CU" },
+  { name: "Ladle & Spatula Set", cat: "Cooking Tools", cost: 220, sell: 320, gst: 18, unit: "SET", prefix: "CT" },
+  { name: "Stainless Steel Idli Stand", cat: "Cooking Tools", cost: 280, sell: 390, gst: 18, unit: "PCS", prefix: "IS" },
+  { name: "Casserole Hot Pot", cat: "Casseroles", cost: 480, sell: 650, gst: 12, unit: "PCS", prefix: "CA" },
+  { name: "Idiyappam / Puttu Press", cat: "Specialty Items", cost: 320, sell: 450, gst: 12, unit: "PCS", prefix: "SP" },
+  { name: "Copper Bottom Cooking Vessel", cat: "Copper Ware", cost: 580, sell: 820, gst: 18, unit: "PCS", prefix: "CP" },
+  { name: "Traditional Brass Lamp / Vessel", cat: "Brass Ware", cost: 850, sell: 1200, gst: 18, unit: "PCS", prefix: "BR" },
 ];
 
-const VENDOR_DATA = [
-  { name: "Rajkumar", company: "Sri Krishna Utensils Wholesale", phone: "9444123456", gst: "33AAACS1234B1Z5", addr: "45 Anna Salai, Coimbatore" },
-  { name: "Subramanian", company: "Tamil Nadu Steel Traders", phone: "9876543210", gst: "33AABCT5678C1Z9", addr: "12 Nehru Street, Madurai" },
-  { name: "Annamalai", company: "Hawkins Authorised Dealer", phone: "9942561234", gst: "33AADCH9012D1Z3", addr: "88 Market Road, Salem" },
-  { name: "Selvaraj", company: "Prestige Distributors TN", phone: "9988776655", gst: "33AAECP3456E1Z7", addr: "23 Ring Road, Tirunelveli" },
-  { name: "Palaniswamy", company: "Kitchen King Wholesale", phone: "9876012345", gst: "33AAFCK7890F1Z1", addr: "67 Gandhi Road, Trichy" },
-  { name: "Murugan", company: "Butterfly Home Appliances", phone: "9443210987", gst: "33AAGCB2345G1Z5", addr: "34 Station Road, Erode" },
-  { name: "Kannan", company: "Milton Authorized Dealer", phone: "9751234567", gst: "33AAHCM6789H1Z9", addr: "56 Market Complex, Chennai" },
-  { name: "Ramamoorthy", company: "Borosil Tamil Nadu", phone: "9600123456", gst: "33AAICB1234I1Z3", addr: "11 Gandhi Nagar, Vellore" },
+const BRANDS = ["Hawkins", "Prestige", "Pigeon", "Butterfly", "Milton", "Cello", "Borosil", "Sujata", "Preethi", "Bajaj", "Philips", "Vinod", "Tefal", "Sunflame"];
+const SIZES = ["1.5L", "2L", "3L", "5L", "7.5L", "10L", "20cm", "24cm", "28cm", "30cm", "32cm", "Small", "Medium", "Large", "Jumbo"];
+
+const CUSTOMER_FIRST = [
+  "Anitha", "Priya", "Lakshmi", "Muthu", "Saraswathi", "Vijayalakshmi", "Karthik", "Meenakshi",
+  "Suresh", "Radha", "Thangamani", "Kavitha", "Senthil", "Devi", "Ganesh", "Yamini",
+  "Balamurugan", "Parvathi", "Chandran", "Selvi", "Amutha", "Natarajan", "Rohini", "Manoharan",
+  "Padma", "Rajendran", "Vasantha", "Usha", "Velmurugan", "Kamala", "Arumugam", "Santhi",
+  "Palani", "Girija", "Rajagopal", "Malathi", "Krishnan", "Ponmani", "Duraisamy", "Jayanthi",
+  "Murugesan", "Nirmala", "Selvakumar", "Geetha", "Ramachandran", "Indira", "Sathyamoorthy",
 ];
 
-const CUSTOMER_NAMES = [
-  "Anitha Devi", "Priya Kumari", "Lakshmi Narayanan", "Muthu Krishnan", "Saraswathi Rajan",
-  "Vijayalakshmi", "Karthikeyan M", "Meenakshi S", "Suresh Kumar", "Radha Krishnan",
-  "Thangamani V", "Kavitha Murali", "Senthil Kumar", "Devi Priya", "Ganesh Babu",
-  "Yamini Shankar", "Balamurugan K", "Parvathi Nair", "Chandran S", "Selvi Arumugam",
-  "Amutha Raj", "Natarajan P", "Rohini Devi", "Manoharan K", "Padma Suresh",
-  "Rajendran V", "Vasantha Kumar", "Usha Rani", "Velmurugan S", "Kamala Devi",
-  "Arumugam N", "Santhi Devi", "Palani Kumar", "Girija Shankar", "Rajagopal M",
-  "Malathi Rajan", "Krishnaswamy", "Ponmani S", "Duraisamy K", "Jayanthi V",
-  "Murugesan A", "Nirmala Kumari", "Selvakumar P", "Geetha Balaji", "Ramachandran T",
-  "Indira Raman", "Sathyamoorthy", "Kowsalya Devi", "Periasamy N", "Ambika Rajan",
-  "Muthusamy K", "Revathi Suresh", "Gopalakrishnan", "Chitra Murali", "Venugopal S",
-  "Bharathi Rajan", "Soundararajan", "Vasuki Devi", "Shanmugam R", "Alamelu Nair",
-  "Thiruvengadam", "Sumathi Priya", "Elumalai K", "Kalaiselvi M", "Rengasamy V",
-  "Tulasi Devi", "Anbazhagan S", "Poorni Kalyan", "Sugumar P", "Janaki Raman",
-  "Ilangovan K", "Tamilselvi R", "Mohanraj S", "Vijaya Rajan", "Kumaravel A",
-  "Bhuvaneswari", "Ramasamy V", "Kokilavani S", "Manickam P", "Hemalatha K",
-  "Arunkumar S", "Rekha Devi", "Marimuthu K", "Kanagalakshmi", "Ponnusamy V",
-  "Vijayakumar M", "Sakunthala R", "Prakash Kumar", "Ambujam Devi", "Rathinam S",
-  "Malarvizhi K", "Senthilnathan", "Kalaivani P", "Ramakrishnan", "Vasumathi Devi",
-  "Pandiarajan K", "Saranya Priya", "Muniyasamy V", "Jayalakshmi S", "Palanivel K",
-  "Pushpalatha M", "Somasundaram", "Renuka Devi", "Karunanithi S", "Sathya Priya",
-  "Sivakumar R", "Nagalakshmi V", "Dhandayuthapani", "Komala Devi", "Vivekanandan",
-  "Abirami Rajan", "Manikandan K", "Ponni Selvi", "Sakthivel M", "Saradha Devi",
-  "Arjunan S", "Gowri Shankar", "Natchathiran", "Meena Kumari", "Velusamy P",
-  "Savitha Rajan", "Thirumalai K", "Sudha Priya", "Rajan Murugan", "Valli Devi",
+const CUSTOMER_LAST = [
+  "Rajan", "Kumar", "Murali", "Priya", "Babu", "Shankar", "Nair", "Arumugam", "Devi", "Suresh",
+  "Narayanan", "Balaji", "Raman", "Kalyan", "Ramanathan", "Pandi", "Swamy", "Nathan", "Mani",
 ];
 
-const ADDRESSES = [
-  "12 Anna Nagar, Coimbatore", "45 Gandhi Road, Salem", "78 Nehru Street, Madurai",
-  "34 Market Road, Tirunelveli", "56 Station Road, Erode", "23 Temple Street, Trichy",
-  "89 Raja Street, Vellore", "67 Main Road, Tiruppur", "11 Cross Street, Thanjavur",
-  "90 West Street, Dindigul", "43 North Street, Karur", "76 South Street, Namakkal",
-  "32 East Street, Villupuram", "65 Town Hall Road, Tuticorin", "18 Old Bus Stand, Kanyakumari",
-  "54 School Road, Virudhunagar", "27 Hospital Road, Sivakasi", "81 Market Colony, Ramanathapuram",
-  "36 Bazaar Street, Cuddalore", "59 Railway Station Road, Pollachi",
+const TOWNS = [
+  "Coimbatore", "Salem", "Madurai", "Tirunelveli", "Erode", "Trichy", "Vellore", "Tiruppur",
+  "Thanjavur", "Dindigul", "Karur", "Namakkal", "Villupuram", "Tuticorin", "Kanyakumari",
+  "Virudhunagar", "Sivakasi", "Ramanathapuram", "Cuddalore", "Pollachi", "Tenkasi", "Sankarankovil",
 ];
 
-const ISSUES_SERVICE = [
-  "Mixer grinder motor not working",
-  "Pressure cooker whistle damaged",
-  "Induction cooktop display not showing",
-  "Mixer grinder jar cracked",
-  "Gas stove burner not lighting",
-  "Induction cooktop coil replacement needed",
-  "Wet grinder stone not rotating",
-  "Electric kettle leaking",
-  "Toaster heating element broken",
-  "Hand blender blade replacement",
-  "Pressure cooker safety valve stuck",
-  "Mixer grinder blade blunt",
-  "Gas stove knob broken",
-  "Electric kettle auto-cutoff not working",
-  "Wet grinder drum crack",
+const ISSUES = [
+  "Mixer grinder motor overload tripping", "Pressure cooker whistle steam leak", "Induction cooktop E0 sensor error",
+  "Mixer grinder jar coupling broken", "Gas stove burner flame low", "Induction cooktop heating coil burned",
+  "Wet grinder stone shaft stuck", "Electric kettle thermal cutoff failed", "Toaster element wire broken",
+  "Hand blender motor noise", "Pressure cooker gasket loose", "Mixer grinder stainless blade blunt",
+  "Gas stove valve knob tight", "Electric kettle base connector loose", "Wet grinder top lock crack",
 ];
 
-const SCRAP_ITEMS = [
-  "Old aluminium vessels",
-  "Broken stainless steel kadhai",
-  "Used copper utensils",
-  "Old iron tawa",
-  "Damaged mixer grinder body",
-  "Old brass vessels",
-  "Broken pressure cooker",
-  "Scrap stainless steel pots",
+const SCRAP = [
+  "Old aluminium vessel scrap", "Broken stainless steel kadhai", "Used copper vessels",
+  "Old iron tawa scrap", "Damaged mixer grinder outer body", "Old brass brassware scrap",
+  "Broken pressure cooker body", "Heavy gauge aluminium scrap", "Used brass lamps",
 ];
 
-// ─── Generator Utilities ─────────────────────────────────────────────────────
-
-function uid(prefix: string): string {
-  return prefix + "-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+function fmtNum(n: number, pad = 5): string {
+  return String(n).padStart(pad, "0");
 }
-
 function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-
 function randFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
-
 function randDate(daysAgo: number, daysAgoMin = 0): string {
   const d = new Date();
   d.setDate(d.getDate() - randInt(daysAgoMin, daysAgo));
@@ -189,85 +86,100 @@ function randDate(daysAgo: number, daysAgoMin = 0): string {
   return d.toISOString();
 }
 
-function fmtNum(n: number, pad = 4): string {
-  return String(n).padStart(pad, "0");
-}
-
-// ─── Main Seed Generator ─────────────────────────────────────────────────────
-
 export function generateUtensilsSeedData() {
-  const now = new Date().toISOString();
+  // ── 1. Inventory (1,200 products) ───────────────────────────────────────
+  const inventory: any[] = [];
+  let itemCounter = 1;
+  for (let i = 0; i < 1200; i++) {
+    const base = BASE_PRODUCTS[i % BASE_PRODUCTS.length];
+    const brand = BRANDS[Math.floor(i / BASE_PRODUCTS.length) % BRANDS.length];
+    const size = SIZES[i % SIZES.length];
+    const name = `${brand} ${base.name} ${size}`;
+    const barcode = `${base.prefix}${fmtNum(itemCounter, 4)}`;
+    const sku = `KSH-${base.prefix}-${fmtNum(itemCounter, 4)}`;
+    const cost = base.cost + randInt(-50, 150);
+    const sell = Math.round(cost * (1.25 + Math.random() * 0.2));
 
-  // ── 1. Inventory ────────────────────────────────────────────────────────
-  const inventory = PRODUCTS_CATALOG.map((p, i) => ({
-    id: `inv-${fmtNum(i + 1)}`,
-    barcode: p.barcode,
-    name: p.name,
-    category: p.cat,
-    unit: p.unit,
-    cost_price: p.cost,
-    selling_price: p.sell,
-    stock_qty: randInt(20, 150),
-    godown_qty: randInt(30, 200),
-    moq: 1,
-    min_stock_alert: 5,
-    sku_code: `KSH${fmtNum(i + 1)}`,
-    gst_rate: p.gst,
-    created_at: randDate(365, 300),
-  }));
-
-  // ── 2. Vendors ──────────────────────────────────────────────────────────
-  const vendors = VENDOR_DATA.map((v, i) => ({
-    id: `ven-${fmtNum(i + 1)}`,
-    name: v.name,
-    company_name: v.company,
-    phone: v.phone,
-    email: `${v.name.toLowerCase().replace(/\s/, "")}@${v.company.toLowerCase().split(" ")[0]}.com`,
-    gst_number: v.gst,
-    address: v.addr,
-    balance_due: randInt(0, 50000),
-    created_at: randDate(365, 300),
-  }));
-
-  // ── 3. Customers (500 customers generated dynamically) ─────────────────
-  const customers: any[] = [];
-  for (let i = 0; i < 500; i++) {
-    const baseName = CUSTOMER_NAMES[i % CUSTOMER_NAMES.length];
-    const surname = i >= CUSTOMER_NAMES.length ? ` (${Math.floor(i / CUSTOMER_NAMES.length) + 1})` : "";
-    const name = `${baseName}${surname}`;
-    const totalSpent = randInt(500, 120000);
-    customers.push({
-      id: `cust-${fmtNum(i + 1)}`,
+    inventory.push({
+      id: `inv-${fmtNum(itemCounter)}`,
+      barcode,
       name,
-      mobile: `9${randInt(100000000, 999999999)}`,
-      email: `${baseName.toLowerCase().replace(/[^a-z]/g, "")}${i + 1}@gmail.com`,
-      address: randFrom(ADDRESSES),
-      gst_number: i % 10 === 0 ? `33AABCK${fmtNum(1000 + i)}B1Z${(i % 9) + 1}` : "",
-      loyalty_points: Math.floor(totalSpent / 100),
-      total_spent: totalSpent,
-      created_at: randDate(400, 200),
+      category: base.cat,
+      unit: base.unit,
+      cost_price: cost,
+      selling_price: sell,
+      stock_qty: randInt(15, 250),
+      godown_qty: randInt(30, 400),
+      moq: 1,
+      min_stock_alert: 5,
+      sku_code: sku,
+      gst_rate: base.gst,
+      created_at: randDate(400, 300),
+    });
+    itemCounter++;
+  }
+
+  // ── 2. Vendors (50 wholesale suppliers) ──────────────────────────────────
+  const vendors: any[] = [];
+  for (let v = 1; v <= 50; v++) {
+    const fn = randFrom(CUSTOMER_FIRST);
+    const ln = randFrom(CUSTOMER_LAST);
+    const town = randFrom(TOWNS);
+    const company = `${fn} ${randFrom(["Utensils Wholesale", "Steel Traders", "Kitchen Appliances", "Metal Industries", "Distributors"])} ${town}`;
+    vendors.push({
+      id: `ven-${fmtNum(v, 3)}`,
+      name: `${fn} ${ln}`,
+      company_name: company,
+      phone: `9${randInt(100000000, 999999999)}`,
+      email: `${fn.toLowerCase()}.${town.toLowerCase()}@utensilstrade.in`,
+      gst_number: `33AA${randFrom(["B","C","D","E","F"])}C${fmtNum(v, 4)}B1Z${(v % 9) + 1}`,
+      address: `${randInt(1, 120)} Main Road, ${town}, Tamil Nadu`,
+      balance_due: randInt(0, 75000),
+      created_at: randDate(400, 300),
     });
   }
 
-  // ── 4. Purchase Orders (150 POs + 750+ items) ─────────────────────────
+  // ── 3. Customers (2,000 retail buyers) ──────────────────────────────────
+  const customers: any[] = [];
+  for (let c = 1; c <= 2000; c++) {
+    const fn = CUSTOMER_FIRST[(c - 1) % CUSTOMER_FIRST.length];
+    const ln = CUSTOMER_LAST[Math.floor((c - 1) / CUSTOMER_FIRST.length) % CUSTOMER_LAST.length];
+    const town = TOWNS[c % TOWNS.length];
+    const suffix = c > 940 ? ` (${Math.floor(c / 940)})` : "";
+    const name = `${fn} ${ln}${suffix}`;
+    const totalSpent = randInt(800, 150000);
+
+    customers.push({
+      id: `cust-${fmtNum(c)}`,
+      name,
+      mobile: `9${randInt(100000000, 999999999)}`,
+      email: `${fn.toLowerCase()}${c}@gmail.com`,
+      address: `${randInt(1, 99)} Bazaar Street, ${town}`,
+      gst_number: c % 12 === 0 ? `33AABCK${fmtNum(1000 + c, 4)}B1Z${(c % 9) + 1}` : "",
+      loyalty_points: Math.floor(totalSpent / 100),
+      total_spent: totalSpent,
+      created_at: randDate(400, 100),
+    });
+  }
+
+  // ── 4. Purchase Orders (1,000 POs + 6,000+ items) ─────────────────────
   const purchase_orders: any[] = [];
   const purchase_items: any[] = [];
-  let poCount = 1;
   let piCount = 1;
 
-  for (let p = 0; p < 150; p++) {
+  for (let p = 1; p <= 1000; p++) {
     const vendor = randFrom(vendors);
     const poDate = randDate(365, 0);
-    const status = p < 100 ? "Received" : p < 130 ? "Ordered" : "Draft";
-    const numItems = randInt(4, 10);
+    const status = p <= 750 ? "Received" : p <= 900 ? "Ordered" : "Draft";
+    const numItems = randInt(4, 8);
     let poTotal = 0;
     let poTax = 0;
-    const poId = `po-${fmtNum(poCount)}`;
-    const poNumber = `PO-2026-${fmtNum(poCount)}`;
+    const poId = `po-${fmtNum(p)}`;
+    const poNumber = `PO-2026-${fmtNum(p, 4)}`;
 
     for (let pi = 0; pi < numItems; pi++) {
       const prod = randFrom(inventory);
-      const qty = randInt(10, 100);
+      const qty = randInt(10, 80);
       const taxRate = prod.gst_rate;
       const lineTotal = qty * prod.cost_price;
       const lineTax = (lineTotal * taxRate) / 100;
@@ -297,29 +209,27 @@ export function generateUtensilsSeedData() {
       paid_amount: status === "Received" ? Math.round(poTotal + poTax) : randInt(0, Math.round(poTotal)),
       tax_amount: Math.round(poTax),
       discount_amount: 0,
-      notes: `Purchase from ${vendor.company_name} — ${numItems} items`,
+      notes: `Purchase order for ${vendor.company_name}`,
       expected_date: new Date(new Date(poDate).getTime() + 7 * 86400000).toISOString(),
       created_at: poDate,
     });
-    poCount++;
   }
 
-  // ── 5. Invoices + Items (3,000 invoices + 7,500+ items) ───────────────
+  // ── 5. Invoices + Items (5,000 Invoices + 15,000+ items) ──────────────
   const invoices: any[] = [];
   const invoice_items: any[] = [];
   const loyalty_ledger: any[] = [];
-  let invCount = 1;
   let iiCount = 1;
   let loyCount = 1;
 
-  for (let inv = 0; inv < 3000; inv++) {
+  for (let inv = 1; inv <= 5000; inv++) {
     const customer = randFrom(customers);
     const invType = Math.random() < 0.55 ? "GST" : Math.random() < 0.8 ? "NON_GST" : "MIXED";
     const payMethod = randFrom(["CASH", "UPI", "CARD", "CASH", "UPI", "CASH"]);
     const invDate = randDate(365, 0);
     const numItems = randInt(1, 5);
-    const invId = `invoice-${fmtNum(invCount, 5)}`;
-    const invNumber = `KSH-${new Date(invDate).getFullYear()}-${fmtNum(invCount, 5)}`;
+    const invId = `invoice-${fmtNum(inv)}`;
+    const invNumber = `KSH-${new Date(invDate).getFullYear()}-${fmtNum(inv, 5)}`;
 
     let subtotal = 0;
     let taxAmt = 0;
@@ -380,64 +290,63 @@ export function generateUtensilsSeedData() {
         created_at: invDate,
       });
     }
-
-    invCount++;
   }
 
-  // ── 6. Service Tickets (300 tickets) ──────────────────────────────────
+  // ── 6. Service Tickets (1,000 tickets) ─────────────────────────────────
   const service_tickets: any[] = [];
   const serviceStatuses = ["Intake", "In Progress", "Ready", "Delivered"] as const;
-  for (let s = 0; s < 300; s++) {
+  for (let s = 1; s <= 1000; s++) {
     const cust = randFrom(customers);
     const prod = randFrom(inventory.filter((i) => i.category === "Kitchen Appliances" || i.category === "Pressure Cookers"));
     const est = randInt(150, 2500);
     const status = randFrom(serviceStatuses);
-    const tokNum = String((s % 99) + 1).padStart(2, "0");
+    const tokNum = String(((s - 1) % 99) + 1).padStart(2, "0");
+
     service_tickets.push({
-      id: `srv-${fmtNum(s + 1)}`,
-      ticket_number: `PMA-S-2026-${fmtNum(s + 1, 3)}`,
+      id: `srv-${fmtNum(s)}`,
+      ticket_number: `PMA-S-2026-${fmtNum(s, 4)}`,
       queue_number: `TOKEN-#${tokNum}`,
       customer_id: cust.id,
       customer_name: cust.name,
       customer_mobile: cust.mobile,
       device_name: prod.name,
       serial_number: `SN${randInt(100000, 999999)}`,
-      issue_description: randFrom(ISSUES_SERVICE),
+      issue_description: randFrom(ISSUES),
       estimated_cost: est,
-      final_cost: status === "Delivered" || status === "Ready" ? randInt(est, est + 500) : 0,
+      final_cost: status === "Delivered" || status === "Ready" ? randInt(est, est + 400) : 0,
       status,
       created_at: randDate(200, 0),
       updated_at: randDate(50, 0),
     });
   }
 
-  // ── 7. Scrap Entries (150) ─────────────────────────────────────────────
+  // ── 7. Scrap Entries (1,000 entries) ───────────────────────────────────
   const scrap_entries: any[] = [];
-  for (let sc = 0; sc < 150; sc++) {
+  for (let sc = 1; sc <= 1000; sc++) {
     const cust = randFrom(customers);
-    const weight = randInt(1, 25);
-    const priceKg = randInt(30, 120);
+    const weight = randInt(1, 30);
+    const priceKg = randInt(30, 150);
     scrap_entries.push({
-      id: `scrap-${fmtNum(sc + 1)}`,
+      id: `scrap-${fmtNum(sc)}`,
       customer_name: cust.name,
       customer_mobile: cust.mobile,
-      item_type: randFrom(SCRAP_ITEMS),
+      item_type: randFrom(SCRAP),
       weight_kg: weight,
       price_per_kg: priceKg,
       total_payout: weight * priceKg,
-      notes: "Utensils scrap buyback",
+      notes: "Utensils metal scrap buyback",
       created_at: randDate(300, 0),
     });
   }
 
-  // ── 8. Godown Transfers (200) ─────────────────────────────────────────
+  // ── 8. Godown Transfers (1,000 transfers) ─────────────────────────────
   const godown_transfers: any[] = [];
-  for (let gt = 0; gt < 200; gt++) {
+  for (let gt = 1; gt <= 1000; gt++) {
     const prod = randFrom(inventory);
-    const qty = randInt(5, 50);
+    const qty = randInt(5, 60);
     const dir = Math.random() < 0.5 ? "shop_to_godown" : "godown_to_shop";
     godown_transfers.push({
-      id: `gdt-${fmtNum(gt + 1)}`,
+      id: `gdt-${fmtNum(gt)}`,
       product_id: prod.id,
       product_name: prod.name,
       qty,
