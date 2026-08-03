@@ -326,10 +326,10 @@ function SettingsPage() {
           <Sprout className="h-4 w-4 text-amber-400" /> Seed Demo Data — Utensils & Kitchen Shop
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
-          Wipe all existing data and seed <strong className="text-foreground">fresh demo data</strong> relevant to a{" "}
-          <strong className="text-amber-400">utensils & kitchen products store</strong>. This loads{" "}
-          <strong>70+ products</strong>, <strong>120 customers</strong>, <strong>800 invoices</strong>,{" "}
-          <strong>60 purchase orders</strong>, <strong>80 service tickets</strong>, and more.
+          Wipe all existing data and seed <strong className="text-foreground font-bold">12,000+ demo data records</strong> relevant to a{" "}
+          <strong className="text-amber-400 font-bold">utensils & kitchen products store</strong>. This loads{" "}
+          <strong>70+ products</strong>, <strong>500 customers</strong>, <strong>3,000 invoices</strong>,{" "}
+          <strong>7,500+ line items</strong>, <strong>150 purchase orders</strong>, <strong>300 service tickets</strong>, and more.
         </p>
         <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded text-xs text-destructive font-semibold">
           <Trash2 className="h-4 w-4 shrink-0" />
@@ -405,13 +405,13 @@ function SettingsPage() {
               </div>
             </div>
             <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-xs text-amber-300 space-y-1">
-              <div className="font-bold">The following will be permanently deleted & replaced:</div>
-              <div>• All inventory items → 70+ utensil/kitchen products</div>
-              <div>• All customers → 120 Tamil Nadu customers</div>
-              <div>• All invoices → 800 realistic bills</div>
-              <div>• All purchase orders → 60 POs from 8 vendors</div>
-              <div>• All service tickets → 80 appliance repair tickets</div>
-              <div>• Settings will be updated for utensils shop</div>
+              <div className="font-bold text-amber-200">Wiping current database & seeding 12,000+ entries:</div>
+              <div>• 70+ Utensil & Kitchen inventory items</div>
+              <div>• 500 Tamil Nadu customers</div>
+              <div>• 3,000 Sales invoices (7,500+ items)</div>
+              <div>• 150 Purchase orders (750+ items)</div>
+              <div>• 300 Appliance service repair tickets</div>
+              <div>• 150 Scrap buyback entries & 200 godown transfers</div>
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowSeedConfirm(false)} className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold">

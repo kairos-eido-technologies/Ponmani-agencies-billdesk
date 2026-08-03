@@ -732,22 +732,25 @@ class OfflineDB {
     await this.dexieDb.inventory.bulkAdd(seed.inventory);
     await this.dexieDb.vendors.bulkAdd(seed.vendors);
 
-    log('Writing customers...');
+    log(`Writing ${seed.customers.length} customers...`);
     await this.dexieDb.customers.bulkAdd(seed.customers);
 
-    log('Writing purchase orders & items...');
+    log(`Writing ${seed.purchase_orders.length} purchase orders & ${seed.purchase_items.length} items...`);
     await this.dexieDb.purchase_orders.bulkAdd(seed.purchase_orders);
     await this.dexieDb.purchase_items.bulkAdd(seed.purchase_items);
 
-    log('Writing invoices...');
-    const INV_BATCH = 200;
+    const INV_BATCH = 500;
     for (let i = 0; i < seed.invoices.length; i += INV_BATCH) {
-      await this.dexieDb.invoices.bulkAdd(seed.invoices.slice(i, i + INV_BATCH));
+      const current = Math.min(i + INV_BATCH, seed.invoices.length);
+      log(`Writing invoices (${current} / ${seed.invoices.length})...`);
+      await this.dexieDb.invoices.bulkAdd(seed.invoices.slice(i, current));
     }
-    log('Writing invoice items...');
-    const II_BATCH = 1000;
+
+    const II_BATCH = 1500;
     for (let i = 0; i < seed.invoice_items.length; i += II_BATCH) {
-      await this.dexieDb.invoice_items.bulkAdd(seed.invoice_items.slice(i, i + II_BATCH));
+      const current = Math.min(i + II_BATCH, seed.invoice_items.length);
+      log(`Writing invoice line items (${current} / ${seed.invoice_items.length})...`);
+      await this.dexieDb.invoice_items.bulkAdd(seed.invoice_items.slice(i, current));
     }
 
     log('Writing service tickets, scrap & transfers...');

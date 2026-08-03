@@ -229,34 +229,37 @@ export function generateUtensilsSeedData() {
     created_at: randDate(365, 300),
   }));
 
-  // ── 3. Customers (120 customers) ────────────────────────────────────────
-  const customers = CUSTOMER_NAMES.map((name, i) => {
-    const totalSpent = randInt(500, 85000);
-    return {
+  // ── 3. Customers (500 customers generated dynamically) ─────────────────
+  const customers: any[] = [];
+  for (let i = 0; i < 500; i++) {
+    const baseName = CUSTOMER_NAMES[i % CUSTOMER_NAMES.length];
+    const surname = i >= CUSTOMER_NAMES.length ? ` (${Math.floor(i / CUSTOMER_NAMES.length) + 1})` : "";
+    const name = `${baseName}${surname}`;
+    const totalSpent = randInt(500, 120000);
+    customers.push({
       id: `cust-${fmtNum(i + 1)}`,
       name,
       mobile: `9${randInt(100000000, 999999999)}`,
-      email: `${name.toLowerCase().replace(/\s+/g, ".")}@gmail.com`,
+      email: `${baseName.toLowerCase().replace(/[^a-z]/g, "")}${i + 1}@gmail.com`,
       address: randFrom(ADDRESSES),
-      gst_number: i % 12 === 0 ? `33AABCK${fmtNum(1000 + i)}B1Z${i % 9 + 1}` : "",
+      gst_number: i % 10 === 0 ? `33AABCK${fmtNum(1000 + i)}B1Z${(i % 9) + 1}` : "",
       loyalty_points: Math.floor(totalSpent / 100),
       total_spent: totalSpent,
       created_at: randDate(400, 200),
-    };
-  });
+    });
+  }
 
-  // ── 4. Purchase Orders ──────────────────────────────────────────────────
+  // ── 4. Purchase Orders (150 POs + 750+ items) ─────────────────────────
   const purchase_orders: any[] = [];
   const purchase_items: any[] = [];
   let poCount = 1;
   let piCount = 1;
 
-  // Generate ~60 purchase orders
-  for (let p = 0; p < 60; p++) {
+  for (let p = 0; p < 150; p++) {
     const vendor = randFrom(vendors);
     const poDate = randDate(365, 0);
-    const status = p < 40 ? "Received" : p < 52 ? "Ordered" : "Draft";
-    const numItems = randInt(3, 10);
+    const status = p < 100 ? "Received" : p < 130 ? "Ordered" : "Draft";
+    const numItems = randInt(4, 10);
     let poTotal = 0;
     let poTax = 0;
     const poId = `po-${fmtNum(poCount)}`;
@@ -294,14 +297,14 @@ export function generateUtensilsSeedData() {
       paid_amount: status === "Received" ? Math.round(poTotal + poTax) : randInt(0, Math.round(poTotal)),
       tax_amount: Math.round(poTax),
       discount_amount: 0,
-      notes: `Purchase from ${vendor.company_name} — ${numItems} products`,
+      notes: `Purchase from ${vendor.company_name} — ${numItems} items`,
       expected_date: new Date(new Date(poDate).getTime() + 7 * 86400000).toISOString(),
       created_at: poDate,
     });
     poCount++;
   }
 
-  // ── 5. Invoices + Items (~800 invoices) ──────────────────────────────────
+  // ── 5. Invoices + Items (3,000 invoices + 7,500+ items) ───────────────
   const invoices: any[] = [];
   const invoice_items: any[] = [];
   const loyalty_ledger: any[] = [];
@@ -309,13 +312,13 @@ export function generateUtensilsSeedData() {
   let iiCount = 1;
   let loyCount = 1;
 
-  for (let inv = 0; inv < 800; inv++) {
+  for (let inv = 0; inv < 3000; inv++) {
     const customer = randFrom(customers);
     const invType = Math.random() < 0.55 ? "GST" : Math.random() < 0.8 ? "NON_GST" : "MIXED";
     const payMethod = randFrom(["CASH", "UPI", "CARD", "CASH", "UPI", "CASH"]);
     const invDate = randDate(365, 0);
-    const numItems = randInt(1, 6);
-    const invId = `invoice-${fmtNum(invCount)}`;
+    const numItems = randInt(1, 5);
+    const invId = `invoice-${fmtNum(invCount, 5)}`;
     const invNumber = `KSH-${new Date(invDate).getFullYear()}-${fmtNum(invCount, 5)}`;
 
     let subtotal = 0;
@@ -368,7 +371,6 @@ export function generateUtensilsSeedData() {
       is_synced: 1,
     });
 
-    // Loyalty entry
     if (pts > 0) {
       loyalty_ledger.push({
         id: `loy-${fmtNum(loyCount++)}`,
@@ -382,15 +384,15 @@ export function generateUtensilsSeedData() {
     invCount++;
   }
 
-  // ── 6. Service Tickets (~80 tickets) ─────────────────────────────────
+  // ── 6. Service Tickets (300 tickets) ──────────────────────────────────
   const service_tickets: any[] = [];
   const serviceStatuses = ["Intake", "In Progress", "Ready", "Delivered"] as const;
-  for (let s = 0; s < 80; s++) {
+  for (let s = 0; s < 300; s++) {
     const cust = randFrom(customers);
     const prod = randFrom(inventory.filter((i) => i.category === "Kitchen Appliances" || i.category === "Pressure Cookers"));
     const est = randInt(150, 2500);
     const status = randFrom(serviceStatuses);
-    const tokNum = String(s + 1).padStart(2, "0");
+    const tokNum = String((s % 99) + 1).padStart(2, "0");
     service_tickets.push({
       id: `srv-${fmtNum(s + 1)}`,
       ticket_number: `PMA-S-2026-${fmtNum(s + 1, 3)}`,
@@ -409,11 +411,11 @@ export function generateUtensilsSeedData() {
     });
   }
 
-  // ── 7. Scrap Entries (~40) ─────────────────────────────────────────────
+  // ── 7. Scrap Entries (150) ─────────────────────────────────────────────
   const scrap_entries: any[] = [];
-  for (let sc = 0; sc < 40; sc++) {
+  for (let sc = 0; sc < 150; sc++) {
     const cust = randFrom(customers);
-    const weight = randInt(1, 20);
+    const weight = randInt(1, 25);
     const priceKg = randInt(30, 120);
     scrap_entries.push({
       id: `scrap-${fmtNum(sc + 1)}`,
@@ -423,14 +425,14 @@ export function generateUtensilsSeedData() {
       weight_kg: weight,
       price_per_kg: priceKg,
       total_payout: weight * priceKg,
-      notes: "Metal scrap buyback",
+      notes: "Utensils scrap buyback",
       created_at: randDate(300, 0),
     });
   }
 
-  // ── 8. Godown Transfers (~50) ─────────────────────────────────────────
+  // ── 8. Godown Transfers (200) ─────────────────────────────────────────
   const godown_transfers: any[] = [];
-  for (let gt = 0; gt < 50; gt++) {
+  for (let gt = 0; gt < 200; gt++) {
     const prod = randFrom(inventory);
     const qty = randInt(5, 50);
     const dir = Math.random() < 0.5 ? "shop_to_godown" : "godown_to_shop";
