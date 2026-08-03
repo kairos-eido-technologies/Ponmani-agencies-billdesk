@@ -168,8 +168,8 @@ function GSTPage() {
   // ─── Export ───────────────────────────────────────────────────────────────
 
   function exportGSTWorkbook() {
-    ExcelEngine.exportGSTData();
-    toast.success("GSTR Filing workbook (B2B, B2C, HSN Summary) downloaded!");
+    ExcelEngine.exportGSTData(gstInvoices);
+    toast.success(`GSTR Filing workbook (${periodLabel}) downloaded!`);
   }
 
   // ─── Build Report Data ────────────────────────────────────────────────────

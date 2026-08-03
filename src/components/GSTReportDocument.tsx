@@ -409,51 +409,90 @@ export function GSTReportDocument({ data }: GSTReportDocumentProps) {
         </tbody>
       </table>
 
-      {/* ─── B2C Invoices ─── */}
+      {/* ─── B2C Invoices (GSTR-1 Table 7 Rate-Wise Summary + Audit List) ─── */}
       <div style={S.sectionTitle}>
-        Section 4B — B2C Consumer Sales ({data.b2cCount} invoices) — GSTR-1 Table 7 (B2C Small)
+        Section 4B — B2C Consumer Sales Summary ({data.b2cCount} invoices) — GSTR-1 Table 7 (B2C Small)
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "4px" }}>
+      <p style={{ fontSize: "9px", color: "#64748b", margin: "0 0 6px 0" }}>
+        As per GST filing rules, B2C consumer sales are filed as aggregated summaries by Place of Supply (33-Tamil Nadu) and Tax Rate.
+      </p>
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "8px" }}>
         <thead>
           <tr>
-            {["#", "Invoice No.", "Date", "Customer Name", "Place of Supply", "Taxable Value (₹)", "CGST (₹)", "SGST (₹)", "Total (₹)"].map((h) => (
-              <th key={h} style={{ ...S.th, textAlign: ["Taxable Value (₹)", "CGST (₹)", "SGST (₹)", "Total (₹)"].includes(h) ? "right" : "left" }}>{h}</th>
+            {["Place of Supply", "Tax Rate", "Taxable Value (₹)", "IGST (₹)", "CGST (₹)", "SGST (₹)", "Total Tax (₹)"].map((h) => (
+              <th key={h} style={{ ...S.th, textAlign: ["Place of Supply", "Tax Rate"].includes(h) ? "left" : "right" }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {data.b2cRows.length === 0 ? (
+          {data.rateBreakup.length === 0 ? (
             <tr>
-              <td colSpan={9} style={{ ...S.td, textAlign: "center", color: "#64748b", fontStyle: "italic", padding: "16px" }}>
-                No B2C GST invoices in this period.
+              <td colSpan={7} style={{ ...S.td, textAlign: "center", color: "#64748b", fontStyle: "italic", padding: "12px" }}>
+                No B2C GST sales in this period.
               </td>
             </tr>
           ) : (
             <>
-              {data.b2cRows.map((row, i) => (
+              {data.rateBreakup.map((r, i) => (
                 <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
-                  <td style={{ ...S.td, color: "#94a3b8", fontSize: "9px" }}>{i + 1}</td>
-                  <td style={{ ...S.td, fontFamily: "monospace", fontWeight: "bold", color: "#1d4ed8" }}>{row.invoiceNo}</td>
-                  <td style={{ ...S.td, fontFamily: "monospace", color: "#475569" }}>{row.date}</td>
-                  <td style={{ ...S.td, fontWeight: "500" }}>{row.customer}</td>
-                  <td style={{ ...S.td, color: "#64748b", fontSize: "9px" }}>33-Tamil Nadu</td>
-                  <td style={S.tdMono}>{INR(row.taxable)}</td>
-                  <td style={{ ...S.tdMono, color: "#1d4ed8" }}>{INR(row.cgst)}</td>
-                  <td style={{ ...S.tdMono, color: "#7c3aed" }}>{INR(row.sgst)}</td>
-                  <td style={{ ...S.tdMono, fontWeight: "bold" }}>{INR(row.total)}</td>
+                  <td style={{ ...S.td, fontWeight: "600" }}>33-Tamil Nadu (Intrastate)</td>
+                  <td style={{ ...S.td, fontFamily: "monospace", fontWeight: "bold", color: "#1d4ed8" }}>{r.rate}% GST</td>
+                  <td style={S.tdMono}>{INR(r.taxable)}</td>
+                  <td style={{ ...S.tdMono, color: "#64748b" }}>₹0.00</td>
+                  <td style={{ ...S.tdMono, color: "#1d4ed8" }}>{INR(r.cgst)}</td>
+                  <td style={{ ...S.tdMono, color: "#7c3aed" }}>{INR(r.sgst)}</td>
+                  <td style={{ ...S.tdMono, fontWeight: "bold" }}>{INR(r.cgst + r.sgst)}</td>
                 </tr>
               ))}
               <tr style={{ background: "#f1f5f9" }}>
-                <td colSpan={5} style={{ ...S.td, fontWeight: "bold", textAlign: "right" }}>B2C Totals →</td>
+                <td colSpan={2} style={{ ...S.td, fontWeight: "bold", textAlign: "right" }}>B2C Total Summary →</td>
                 <td style={S.foot}>{INR(data.b2cRows.reduce((s, r) => s + r.taxable, 0))}</td>
+                <td style={{ ...S.foot, color: "#64748b" }}>₹0.00</td>
                 <td style={{ ...S.foot, color: "#1d4ed8" }}>{INR(data.b2cRows.reduce((s, r) => s + r.cgst, 0))}</td>
                 <td style={{ ...S.foot, color: "#7c3aed" }}>{INR(data.b2cRows.reduce((s, r) => s + r.sgst, 0))}</td>
-                <td style={S.foot}>{INR(data.b2cRows.reduce((s, r) => s + r.total, 0))}</td>
+                <td style={S.foot}>{INR(data.b2cRows.reduce((s, r) => s + r.cgst + r.sgst, 0))}</td>
               </tr>
             </>
           )}
         </tbody>
       </table>
+
+      {/* B2C Audit Trail (capped at 25 for printable report) */}
+      {data.b2cRows.length > 0 && (
+        <div style={{ marginBottom: "8px" }}>
+          <div style={{ fontSize: "9px", fontWeight: "bold", color: "#334155", marginBottom: "4px" }}>
+            Audit Log — Recent B2C Consumer Transactions (Showing top {Math.min(data.b2cRows.length, 25)} of {data.b2cRows.length} bills):
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["#", "Invoice No.", "Date", "Customer Name", "Taxable Value (₹)", "CGST (₹)", "SGST (₹)", "Total (₹)"].map((h) => (
+                  <th key={h} style={{ ...S.th, fontSize: "8.5px", padding: "3px 6px", textAlign: ["Taxable Value (₹)", "CGST (₹)", "SGST (₹)", "Total (₹)"].includes(h) ? "right" : "left" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.b2cRows.slice(0, 25).map((row, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f8fafc" }}>
+                  <td style={{ ...S.td, fontSize: "8.5px", padding: "3px 6px", color: "#94a3b8" }}>{i + 1}</td>
+                  <td style={{ ...S.td, fontSize: "8.5px", padding: "3px 6px", fontFamily: "monospace", fontWeight: "bold", color: "#1d4ed8" }}>{row.invoiceNo}</td>
+                  <td style={{ ...S.td, fontSize: "8.5px", padding: "3px 6px", fontFamily: "monospace", color: "#475569" }}>{row.date}</td>
+                  <td style={{ ...S.td, fontSize: "8.5px", padding: "3px 6px" }}>{row.customer}</td>
+                  <td style={{ ...S.tdMono, fontSize: "8.5px", padding: "3px 6px" }}>{INR(row.taxable)}</td>
+                  <td style={{ ...S.tdMono, fontSize: "8.5px", padding: "3px 6px", color: "#1d4ed8" }}>{INR(row.cgst)}</td>
+                  <td style={{ ...S.tdMono, fontSize: "8.5px", padding: "3px 6px", color: "#7c3aed" }}>{INR(row.sgst)}</td>
+                  <td style={{ ...S.tdMono, fontSize: "8.5px", padding: "3px 6px", fontWeight: "bold" }}>{INR(row.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.b2cRows.length > 25 && (
+            <div style={{ fontSize: "8.5px", color: "#64748b", fontStyle: "italic", marginTop: "3px", textAlign: "right" }}>
+              * {data.b2cRows.length - 25} additional B2C invoices omitted from print preview. Full list included in Excel Export.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── HSN Summary ─── */}
       <div style={S.sectionTitle}>

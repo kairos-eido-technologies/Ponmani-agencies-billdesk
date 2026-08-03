@@ -98,14 +98,23 @@ export class ExcelEngine {
   }
 
   /**
-   * Export GST filing formatted workbook (B2B, B2C, HSN Summary)
+   * Export GST filing formatted workbook (B2B, B2C, HSN Summary, GSTR-3B)
    */
-  public static exportGSTData() {
+  public static exportGSTData(customInvoices?: any[]) {
     const store = db.getStore();
+    const invoicesToExport = customInvoices || store.invoices || [];
     const b2b: any[] = [];
     const b2c: any[] = [];
+    let totalTaxable = 0;
+    let totalTax = 0;
 
-    store.invoices.forEach((inv) => {
+    invoicesToExport.forEach((inv) => {
+      if (inv.invoice_type === 'NON_GST') return;
+      const taxable = Number(inv.subtotal - inv.discount_amount) || 0;
+      const tax = Number(inv.tax_amount) || 0;
+      totalTaxable += taxable;
+      totalTax += tax;
+
       if (inv.customer_id) {
         const cust = store.customers.find((c) => c.id === inv.customer_id);
         if (cust?.gst_number) {
@@ -114,14 +123,14 @@ export class ExcelEngine {
             'Receiver Name': cust.name,
             'Invoice Number': inv.invoice_number,
             'Invoice Date': inv.created_at.split('T')[0],
-            'Invoice Value': inv.grand_total,
+            'Invoice Value (₹)': inv.grand_total,
             'Place of Supply': '33-Tamil Nadu',
             'Reverse Charge': 'N',
-            'Invoice Type': 'Regular',
-            'Taxable Value': inv.subtotal - inv.discount_amount,
-            'Integrated Tax': 0,
-            'Central Tax': (inv.tax_amount / 2).toFixed(2),
-            'State Tax': (inv.tax_amount / 2).toFixed(2),
+            'Invoice Type': 'Regular B2B',
+            'Taxable Value (₹)': taxable.toFixed(2),
+            'Integrated Tax (₹)': '0.00',
+            'Central Tax / CGST (₹)': (tax / 2).toFixed(2),
+            'State Tax / SGST (₹)': (tax / 2).toFixed(2),
           });
           return;
         }
@@ -131,41 +140,56 @@ export class ExcelEngine {
         'Invoice Number': inv.invoice_number,
         'Date': inv.created_at.split('T')[0],
         'Customer': inv.customer_name,
-        'Taxable Value': inv.subtotal - inv.discount_amount,
-        'CGST (9%)': (inv.tax_amount / 2).toFixed(2),
-        'SGST (9%)': (inv.tax_amount / 2).toFixed(2),
-        'Total Tax': inv.tax_amount,
-        'Invoice Total': inv.grand_total,
+        'Place of Supply': '33-Tamil Nadu',
+        'Taxable Value (₹)': taxable.toFixed(2),
+        'CGST (₹)': (tax / 2).toFixed(2),
+        'SGST (₹)': (tax / 2).toFixed(2),
+        'Total Tax (₹)': tax.toFixed(2),
+        'Invoice Total (₹)': inv.grand_total,
       });
     });
 
     // HSN Summary aggregation
-    const hsnMap: Record<string, { description: string; qty: number; total_val: number; tax_val: number }> = {};
-    store.invoice_items.forEach((ii) => {
+    const invIds = new Set(invoicesToExport.map((i) => i.id));
+    const periodItems = store.invoice_items.filter((ii) => invIds.has(ii.invoice_id));
+    const hsnMap: Record<string, { description: string; qty: number; total_val: number; tax_val: number; rate: number }> = {};
+
+    periodItems.forEach((ii) => {
       const prod = store.inventory.find((p) => p.id === ii.product_id);
-      const sku = prod?.sku_code || prod?.barcode || 'PMA100001';
-      if (!hsnMap[sku]) {
-        hsnMap[sku] = { description: prod?.category || 'Hardware', qty: 0, total_val: 0, tax_val: 0 };
+      const sku = prod?.sku_code || prod?.barcode || 'GENERAL';
+      const rate = Number(ii.tax_rate) || 18;
+      const key = `${sku}-${rate}`;
+
+      if (!hsnMap[key]) {
+        hsnMap[key] = { description: prod?.category || 'Utensils', qty: 0, total_val: 0, tax_val: 0, rate };
       }
-      hsnMap[sku].qty += ii.qty;
-      hsnMap[sku].total_val += ii.total_price;
-      hsnMap[sku].tax_val += (ii.total_price * ii.tax_rate) / 100;
+      hsnMap[key].qty += ii.qty;
+      hsnMap[key].total_val += ii.total_price;
+      hsnMap[key].tax_val += (ii.total_price * rate) / 100;
     });
 
-    const hsnSummary = Object.entries(hsnMap).map(([sku, d]) => ({
-      'SKU / Item Code': sku,
+    const hsnSummary = Object.entries(hsnMap).map(([_, d]) => ({
+      'HSN / SKU Code': d.description,
       'Description': d.description,
+      'UQC': 'NOS',
       'Total Quantity': d.qty,
-      'Total Value (₹)': d.total_val,
-      'Taxable Value (₹)': d.total_val,
-      'Central Tax Amount (₹)': (d.tax_val / 2).toFixed(2),
-      'State Tax Amount (₹)': (d.tax_val / 2).toFixed(2),
+      'GST Rate (%)': d.rate,
+      'Taxable Value (₹)': d.total_val.toFixed(2),
+      'Integrated Tax (₹)': '0.00',
+      'Central Tax CGST (₹)': (d.tax_val / 2).toFixed(2),
+      'State Tax SGST (₹)': (d.tax_val / 2).toFixed(2),
     }));
 
+    const gstr3bSummary = [
+      { 'Section': '3.1(a) Outward Taxable Supplies', 'Taxable Value (₹)': totalTaxable.toFixed(2), 'CGST (₹)': (totalTax / 2).toFixed(2), 'SGST (₹)': (totalTax / 2).toFixed(2), 'IGST (₹)': '0.00' },
+      { 'Section': '3.1(c) Other Outward Supplies (Nil/Exempt)', 'Taxable Value (₹)': '0.00', 'CGST (₹)': '0.00', 'SGST (₹)': '0.00', 'IGST (₹)': '0.00' },
+    ];
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b2b.length ? b2b : [{ 'Notice': 'No B2B Invoices Recorded' }]), 'B2B Invoices');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b2c), 'B2C Small');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hsnSummary), 'HSN Summary');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b2b.length ? b2b : [{ 'Notice': 'No B2B Invoices Recorded' }]), '4A-B2B Invoices');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(b2c.length ? b2c : [{ 'Notice': 'No B2C Invoices Recorded' }]), '7-B2C Small');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hsnSummary.length ? hsnSummary : [{ 'Notice': 'No HSN Items' }]), '12-HSN Summary');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gstr3bSummary), 'GSTR-3B Summary');
 
     const timestamp = new Date().toISOString().split('T')[0];
     XLSX.writeFile(wb, `Ponmani_GSTR_Filing_${timestamp}.xlsx`);
