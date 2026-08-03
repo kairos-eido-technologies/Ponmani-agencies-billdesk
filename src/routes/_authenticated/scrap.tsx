@@ -82,29 +82,57 @@ function ScrapPage() {
               <th className="text-left px-4 py-2.5">Date & Time</th>
               <th className="text-left px-4 py-2.5">Seller Name / Mobile</th>
               <th className="text-left px-4 py-2.5">Scrap Category</th>
+              <th className="text-left px-4 py-2.5">Source / Notes</th>
               <th className="text-right px-4 py-2.5">Weight (Kg)</th>
               <th className="text-right px-4 py-2.5">Rate / Kg</th>
               <th className="text-right px-4 py-2.5">Total Payout</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {scrapEntries.data?.map((s) => (
-              <tr key={s.id} className="hover:bg-secondary/40 transition">
-                <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">{new Date(s.created_at).toLocaleString()}</td>
-                <td className="px-4 py-2.5 text-xs">
-                  <div className="font-semibold text-foreground">{s.customer_name}</div>
-                  <div className="font-mono text-muted-foreground">{s.customer_mobile || "Walk-in Seller"}</div>
-                </td>
-                <td className="px-4 py-2.5 text-xs font-medium text-emerald-400">{s.item_type}</td>
-                <td className="px-4 py-2.5 text-right font-mono font-semibold">{s.weight_kg} kg</td>
-                <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{inr(s.price_per_kg)}</td>
-                <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">{inr(s.total_payout)}</td>
-              </tr>
-            ))}
+            {scrapEntries.data?.map((s) => {
+              const isEx = s.is_exchange || s.notes?.includes("From POS Bill") || s.notes?.includes("Auto-logged");
+              return (
+                <tr key={s.id} className="hover:bg-secondary/40 transition">
+                  <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">
+                    {new Date(s.created_at).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs">
+                    <div className="font-semibold text-foreground">{s.customer_name}</div>
+                    <div className="font-mono text-muted-foreground">{s.customer_mobile || "Walk-in Seller"}</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {isEx ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                          🔄 POS Exchange
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                          📦 Scrap Purchase
+                        </span>
+                      )}
+                      <span className="text-foreground font-semibold">{s.item_type}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">
+                    {s.notes || "-"}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono font-semibold">
+                    {s.weight_kg} kg
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
+                    {inr(s.price_per_kg)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">
+                    {inr(s.total_payout)}
+                  </td>
+                </tr>
+              );
+            })}
             {scrapEntries.data?.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-sm text-muted-foreground">
-                  No scrap buying records logged yet.
+                <td colSpan={7} className="text-center py-12 text-sm text-muted-foreground">
+                  No scrap buying or exchange records logged yet.
                 </td>
               </tr>
             )}
@@ -124,6 +152,13 @@ function ScrapPage() {
     </div>
   );
 }
+
+const L = ({ label, children }: any) => (
+  <label className="block">
+    <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>
+    {children}
+  </label>
+);
 
 function ScrapEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({
@@ -149,7 +184,6 @@ function ScrapEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
   const calculatedPayout = f.weight_kg * f.price_per_kg;
 
   const ic = "w-full h-9 rounded bg-input border border-border px-3 text-xs focus:outline-none focus:border-primary";
-  const L = ({ label, children }: any) => <label className="block"><div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>{children}</label>;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>

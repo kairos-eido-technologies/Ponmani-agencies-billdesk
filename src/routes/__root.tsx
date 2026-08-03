@@ -90,7 +90,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/ponmani-logo-icon.png", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/ponmani-logo-icon.png" },
     ],
   }),
   shellComponent: RootShell,
@@ -117,13 +118,15 @@ import { db } from "@/lib/db/db";
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const [loaded, setLoaded] = useState(db.isLoaded);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (!loaded) {
+    if (db.isLoaded) {
+      setLoaded(true);
+    } else {
       db.loadPromise.then(() => setLoaded(true));
     }
-  }, [loaded]);
+  }, []);
 
   if (!loaded) {
     return (

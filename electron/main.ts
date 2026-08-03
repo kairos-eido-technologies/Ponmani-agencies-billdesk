@@ -10,14 +10,14 @@ function createWindow() {
     height: 768,
     minWidth: 1024,
     minHeight: 600,
-    title: 'Ponmani Agencies Offline ERP',
+    title: 'Ponmani Agencies Console ERP',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
     },
-    icon: path.join(__dirname, '../public/favicon.ico'),
+    icon: path.join(__dirname, '../public/ponmani-logo-icon.png'),
     backgroundColor: '#16181D',
   });
 

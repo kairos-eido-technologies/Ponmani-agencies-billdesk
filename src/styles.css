@@ -136,42 +136,60 @@
 }
 
 @media print {
-  /* Hide everything except the thermal receipt */
-  body { background: white !important; color: black !important; margin: 0 !important; }
+  /* Reset body & html to natural unclipped height */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
   
-  /* Hide the app shell, sidebar, nav */
-  nav, aside, header, footer, .no-print, .print\:hidden { display: none !important; }
-
-  /* Page setup — 80mm thermal paper */
-  @page {
-    size: 80mm auto;
-    margin: 4mm 3mm;
+  /* Hide shell UI elements, sidebars, headers, and modal backdrops */
+  nav, aside, header, footer, .no-print, .print\:hidden {
+    display: none !important;
   }
 
-  /* The receipt itself */
+  /* Unclip modal scroll containers during browser print */
+  .fixed, div[role="dialog"] {
+    position: static !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* 80mm Thermal Receipt Spec */
   .thermal-receipt {
-    width: 74mm !important;
-    max-width: 74mm !important;
+    width: 78mm !important;
+    max-width: 78mm !important;
+    margin: 0 auto !important;
+    padding: 2mm !important;
     font-family: 'Courier New', Courier, monospace !important;
     font-size: 11px !important;
-    line-height: 1.45 !important;
-    color: black !important;
-    background: white !important;
+    line-height: 1.35 !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
   }
 
-  /* Force all text black on print */
+  /* Force clean black text for thermal printers */
   .thermal-receipt * {
-    color: black !important;
-    background: transparent !important;
-    border-color: #000 !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
     text-shadow: none !important;
     box-shadow: none !important;
   }
-
-  /* Remove screen-only preview wrapper padding */
-  .thermal-receipt {
-    margin: 0 !important;
-    padding: 0 !important;
-  }
 }
+
+
 

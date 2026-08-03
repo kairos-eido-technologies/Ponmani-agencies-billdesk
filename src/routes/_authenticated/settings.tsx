@@ -5,7 +5,7 @@ import { ExcelEngine } from "@/lib/excel/excel-engine";
 import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
-import { Settings as SettingsIcon, Printer, Database, Key, ScanBarcode, ShieldCheck, Download, Upload, RefreshCw, CheckCircle, AlertTriangle } from "lucide-react";
+import { Settings as SettingsIcon, Printer, Database, Key, ScanBarcode, ShieldCheck, Download, Upload, RefreshCw, CheckCircle, AlertTriangle, Trash2, Sprout } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
@@ -30,6 +30,9 @@ function SettingsPage() {
   const [scannerTestInput, setScannerTestInput] = useState("");
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedProgress, setSeedProgress] = useState<string[]>([]);
+  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
 
   function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
@@ -76,6 +79,25 @@ function SettingsPage() {
   function handleTestPrint() {
     toast.success("Sending raw ESC/POS test receipt to local thermal printer driver...");
     window.print();
+  }
+
+  async function handleSeedUtensils() {
+    setIsSeeding(true);
+    setSeedProgress([]);
+    setShowSeedConfirm(false);
+    try {
+      await db.wipeAndSeedUtensils((msg) => {
+        setSeedProgress((prev) => [...prev, msg]);
+      });
+      setSeedProgress((prev) => [...prev, '✓ All done! Reloading in 2s...']);
+      toast.success("Utensils demo data seeded successfully!");
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err: any) {
+      toast.error("Seeding failed: " + err.message);
+      setSeedProgress((prev) => [...prev, '✗ Error: ' + err.message]);
+    } finally {
+      setIsSeeding(false);
+    }
   }
 
   return (
@@ -130,16 +152,32 @@ function SettingsPage() {
                 className={ic}
               />
             </L>
-            <L label="Receipt Custom Footer Note / Terms">
+            <L label="Sales Receipt Custom Footer / Terms">
               <textarea
                 value={settingsForm.receipt_footer_note || ""}
                 onChange={(e) => setSettingsForm({ ...settingsForm, receipt_footer_note: e.target.value })}
                 placeholder="e.g. Goods once sold can be exchanged within 7 days..."
-                className="w-full min-h-[60px] rounded bg-input border border-border p-2 text-xs focus:outline-none focus:border-primary font-mono"
+                className="w-full min-h-[50px] rounded bg-input border border-border p-2 text-xs focus:outline-none focus:border-primary font-mono"
+              />
+            </L>
+            <L label="Service Intake Token Disclaimer & Terms">
+              <textarea
+                value={settingsForm.service_ticket_terms || ""}
+                onChange={(e) => setSettingsForm({ ...settingsForm, service_ticket_terms: e.target.value })}
+                placeholder="e.g. Present this receipt token during device collection. Unclaimed items after 30 days are subject to shop terms."
+                className="w-full min-h-[50px] rounded bg-input border border-border p-2 text-xs focus:outline-none focus:border-primary font-mono"
+              />
+            </L>
+            <L label="Purchase Order Default Terms / Note">
+              <textarea
+                value={settingsForm.po_footer_terms || ""}
+                onChange={(e) => setSettingsForm({ ...settingsForm, po_footer_terms: e.target.value })}
+                placeholder="e.g. Please acknowledge receipt of this Purchase Order."
+                className="w-full min-h-[50px] rounded bg-input border border-border p-2 text-xs focus:outline-none focus:border-primary font-mono"
               />
             </L>
             <button type="submit" className="h-9 px-4 rounded bg-primary text-primary-foreground font-bold text-xs hover:accent-glow transition">
-              Save Store Profile
+              Save Store Profile & Receipt Texts
             </button>
           </form>
         </div>
@@ -282,6 +320,49 @@ function SettingsPage() {
         </div>
       </div>
 
+      {/* Seed Demo Data Card */}
+      <div className="card-surface p-5 border-l-4 border-l-amber-500 space-y-4">
+        <div className="text-sm font-bold text-foreground flex items-center gap-2 border-b border-border pb-2">
+          <Sprout className="h-4 w-4 text-amber-400" /> Seed Demo Data — Utensils & Kitchen Shop
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Wipe all existing data and seed <strong className="text-foreground">fresh demo data</strong> relevant to a{" "}
+          <strong className="text-amber-400">utensils & kitchen products store</strong>. This loads{" "}
+          <strong>70+ products</strong>, <strong>120 customers</strong>, <strong>800 invoices</strong>,{" "}
+          <strong>60 purchase orders</strong>, <strong>80 service tickets</strong>, and more.
+        </p>
+        <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded text-xs text-destructive font-semibold">
+          <Trash2 className="h-4 w-4 shrink-0" />
+          WARNING: This will permanently delete ALL current data (inventory, customers, invoices, etc.)
+        </div>
+
+        {isSeeding ? (
+          <div className="space-y-2">
+            <div className="text-xs text-amber-400 font-bold animate-pulse flex items-center gap-2">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Seeding in progress... do not close this window
+            </div>
+            <div className="bg-card border border-border rounded p-3 max-h-40 overflow-y-auto space-y-0.5">
+              {seedProgress.map((msg, i) => (
+                <div key={i} className="text-[11px] font-mono text-muted-foreground">{msg}</div>
+              ))}
+            </div>
+          </div>
+        ) : seedProgress.length > 0 ? (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded p-3">
+            <div className="text-xs text-emerald-400 font-bold flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" /> Seeding complete! Page reloading...
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowSeedConfirm(true)}
+            className="h-9 px-4 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-2 transition shadow"
+          >
+            <Sprout className="h-4 w-4" /> Seed Utensils Demo Data (Wipe & Reset)
+          </button>
+        )}
+      </div>
+
       {/* Restore Confirmation Dialog */}
       {showRestoreConfirm && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setShowRestoreConfirm(false)}>
@@ -304,6 +385,43 @@ function SettingsPage() {
                 className="h-9 px-4 rounded bg-destructive text-destructive-foreground font-bold text-xs hover:opacity-90"
               >
                 Confirm Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Seed Confirm Dialog */}
+      {showSeedConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => setShowSeedConfirm(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-6 border-l-4 border-l-amber-500 space-y-5">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                <Trash2 className="h-5 w-5 text-amber-400" />
+              </div>
+              <div>
+                <div className="font-bold text-base">Wipe & Seed Utensils Data?</div>
+                <div className="text-xs text-muted-foreground mt-0.5">This action is irreversible without a backup.</div>
+              </div>
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-xs text-amber-300 space-y-1">
+              <div className="font-bold">The following will be permanently deleted & replaced:</div>
+              <div>• All inventory items → 70+ utensil/kitchen products</div>
+              <div>• All customers → 120 Tamil Nadu customers</div>
+              <div>• All invoices → 800 realistic bills</div>
+              <div>• All purchase orders → 60 POs from 8 vendors</div>
+              <div>• All service tickets → 80 appliance repair tickets</div>
+              <div>• Settings will be updated for utensils shop</div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowSeedConfirm(false)} className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold">
+                Cancel
+              </button>
+              <button
+                onClick={handleSeedUtensils}
+                className="h-9 px-5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition"
+              >
+                Yes, Wipe & Seed
               </button>
             </div>
           </div>

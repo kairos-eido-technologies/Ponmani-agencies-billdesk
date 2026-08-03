@@ -27,6 +27,7 @@ const UNIT_OPTIONS = [
 function InventoryPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
+  const [locationFilter, setLocationFilter] = useState<"ALL" | "SHOP" | "GODOWN" | "LOW_STOCK">("ALL");
   const [edit, setEdit] = useState<InventoryItem | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -34,17 +35,26 @@ function InventoryPage() {
   const [pnlDetailProduct, setPnlDetailProduct] = useState<InventoryItem | null>(null);
 
   const products = useQuery({
-    queryKey: ["local-inventory-products", q],
+    queryKey: ["local-inventory-products", q, locationFilter],
     queryFn: async () => {
       const all = db.getInventory();
-      if (!q.trim()) return all;
-      const clean = q.toLowerCase();
-      return all.filter((p) =>
-        p.name.toLowerCase().includes(clean) ||
-        p.barcode.toLowerCase().includes(clean) ||
-        (p.sku_code && p.sku_code.toLowerCase().includes(clean)) ||
-        p.category.toLowerCase().includes(clean)
-      );
+      return all.filter((p) => {
+        if (q.trim()) {
+          const clean = q.toLowerCase();
+          const match =
+            p.name.toLowerCase().includes(clean) ||
+            p.barcode.toLowerCase().includes(clean) ||
+            (p.sku_code && p.sku_code.toLowerCase().includes(clean)) ||
+            p.category.toLowerCase().includes(clean);
+          if (!match) return false;
+        }
+
+        if (locationFilter === "SHOP") return (p.stock_qty || 0) > 0;
+        if (locationFilter === "GODOWN") return (p.godown_qty || 0) > 0;
+        if (locationFilter === "LOW_STOCK") return (p.stock_qty || 0) <= (p.moq || 5) || (p.godown_qty || 0) <= (p.moq || 5);
+
+        return true;
+      });
     },
   });
 
@@ -181,13 +191,40 @@ function InventoryPage() {
       </div>
 
       <div className="card-surface">
-        <div className="p-3 border-b border-border">
+        <div className="p-3 border-b border-border flex flex-col sm:flex-row gap-2 items-center justify-between">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search by product name, barcode, SKU, or category…"
-            className="w-full h-9 px-3 rounded-md bg-input border border-border text-sm font-mono text-foreground"
+            className="w-full sm:flex-1 h-9 px-3 rounded-md bg-input border border-border text-sm font-mono text-foreground"
           />
+
+          <div className="flex items-center gap-1 text-xs font-semibold shrink-0">
+            <button
+              onClick={() => setLocationFilter("ALL")}
+              className={`h-8 px-2.5 rounded border transition ${locationFilter === "ALL" ? "bg-primary text-primary-foreground border-primary font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
+            >
+              All Products
+            </button>
+            <button
+              onClick={() => setLocationFilter("SHOP")}
+              className={`h-8 px-2.5 rounded border transition ${locationFilter === "SHOP" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
+            >
+              In Shop
+            </button>
+            <button
+              onClick={() => setLocationFilter("GODOWN")}
+              className={`h-8 px-2.5 rounded border transition ${locationFilter === "GODOWN" ? "bg-blue-500/20 text-blue-400 border-blue-500/40 font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
+            >
+              In Godown
+            </button>
+            <button
+              onClick={() => setLocationFilter("LOW_STOCK")}
+              className={`h-8 px-2.5 rounded border transition ${locationFilter === "LOW_STOCK" ? "bg-amber-500/20 text-amber-400 border-amber-500/40 font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
+            >
+              Low Stock
+            </button>
+          </div>
         </div>
 
         {/* Seamless No-Scroll Window Layout */}

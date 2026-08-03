@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth-store";
 import { toast } from "sonner";
 import { Store, ShieldCheck, KeyRound } from "lucide-react";
+import { PonmaniLogo } from "@/components/PonmaniLogo";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -20,7 +21,7 @@ function AuthPage() {
     const success = loginWithPin(username, pin);
     if (success) {
       toast.success(`Logged in as ${username.toUpperCase()}`);
-      navigate({ to: "/pos", replace: true });
+      navigate({ to: "/apps", replace: true });
     } else {
       toast.error("Invalid Username or PIN. Default Admin PIN is 1234");
     }
@@ -35,15 +36,12 @@ function AuthPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md card-surface p-6">
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-border">
-          <div className="h-10 w-10 rounded-lg bg-primary/15 border border-primary/30 grid place-items-center">
-            <Store className="h-5 w-5 text-primary" />
+        <div className="flex flex-col items-center text-center mb-6 pb-4 border-b border-border">
+          <div className="bg-white p-3 rounded-2xl shadow-lg border border-border mb-3">
+            <PonmaniLogo variant="color" className="h-20 w-auto" />
           </div>
-          <div>
-            <div className="text-base font-semibold tracking-tight text-foreground">Ponmani Agencies</div>
-            <div className="text-xs text-muted-foreground flex items-center gap-1">
-              <ShieldCheck className="h-3 w-3 text-emerald-400" /> Offline Desktop ERP Console
-            </div>
+          <div className="text-xs text-muted-foreground flex items-center justify-center gap-1 font-medium">
+            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> SINCE 1998 • Retail & Service Console
           </div>
         </div>
 

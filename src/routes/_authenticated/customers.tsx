@@ -39,6 +39,14 @@ function CustomersPage() {
     },
   });
 
+  const loyaltyLog = useQuery({
+    queryKey: ["local-customer-loyalty-log", selected?.id],
+    enabled: !!selected,
+    queryFn: async () => {
+      return db.getLoyaltyLedger(selected?.id);
+    },
+  });
+
   function exportCustomersExcel() {
     const data = (customers.data || []).map((c) => ({
       'Customer Name': c.name,
@@ -140,23 +148,60 @@ function CustomersPage() {
                 </div>
               </div>
 
-              <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Customer Purchase History</div>
-              <div className="space-y-2 max-h-[450px] overflow-auto pr-1">
-                {history.data?.map(({ invoice: h }) => (
-                  <div key={h.id} className="flex justify-between items-center text-xs p-2.5 rounded bg-card border border-border">
-                    <div>
-                      <div className="font-mono font-bold text-primary">{h.invoice_number}</div>
-                      <div className="text-[10px] font-mono text-muted-foreground">{new Date(h.created_at).toLocaleString()}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono font-bold text-foreground">{inr(h.grand_total)}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">{h.payment_method}</div>
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                {/* Purchase History */}
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                    🛍️ Purchase History
                   </div>
-                ))}
-                {history.data?.length === 0 && (
-                  <div className="text-xs text-muted-foreground py-8 text-center">No purchases recorded for this customer.</div>
-                )}
+                  <div className="space-y-2 max-h-[360px] overflow-auto pr-1">
+                    {history.data?.map(({ invoice: h }) => (
+                      <div key={h.id} className="flex justify-between items-center text-xs p-2.5 rounded bg-card border border-border">
+                        <div>
+                          <div className="font-mono font-bold text-primary">{h.invoice_number}</div>
+                          <div className="text-[10px] font-mono text-muted-foreground">{new Date(h.created_at).toLocaleString()}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono font-bold text-foreground">{inr(h.grand_total)}</div>
+                          <div className="text-[10px] text-muted-foreground font-mono">{h.payment_method}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {history.data?.length === 0 && (
+                      <div className="text-xs text-muted-foreground py-8 text-center">No purchases recorded for this customer.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Loyalty Activity Log */}
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                    🪙 Loyalty Points Ledger Log
+                  </div>
+                  <div className="space-y-2 max-h-[360px] overflow-auto pr-1">
+                    {loyaltyLog.data?.map((l) => {
+                      const isGain = l.points_change >= 0;
+                      return (
+                        <div key={l.id} className="flex justify-between items-center text-xs p-2.5 rounded bg-card border border-border">
+                          <div className="min-w-0 pr-2">
+                            <div className="font-semibold text-foreground truncate">{l.reason}</div>
+                            <div className="text-[10px] font-mono text-muted-foreground">{new Date(l.created_at).toLocaleString()}</div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
+                              isGain ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-red-500/20 text-red-400 border border-red-500/30"
+                            }`}>
+                              {isGain ? `+${l.points_change}` : l.points_change} Pts
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {(!loyaltyLog.data || loyaltyLog.data.length === 0) && (
+                      <div className="text-xs text-muted-foreground py-8 text-center">No loyalty activity logged yet.</div>
+                    )}
+                  </div>
+                </div>
               </div>
             </>
           ) : (
@@ -180,6 +225,13 @@ function CustomersPage() {
   );
 }
 
+const L = ({ label, children }: any) => (
+  <label className="block">
+    <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>
+    {children}
+  </label>
+);
+
 function NewCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [mobile, setMobile] = useState("");
   const [name, setName] = useState("");
@@ -199,7 +251,6 @@ function NewCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   }
 
   const ic = "w-full h-9 rounded bg-input border border-border px-3 text-xs focus:outline-none focus:border-primary";
-  const L = ({ label, children }: any) => <label className="block"><div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>{children}</label>;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>

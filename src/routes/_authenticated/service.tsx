@@ -6,7 +6,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr } from "@/lib/format";
-import { Plus, Wrench, Printer, FileSpreadsheet, X, CheckCircle2 } from "lucide-react";
+import { Plus, Wrench, Printer, FileSpreadsheet, X, CheckCircle2, Ticket, Pencil } from "lucide-react";
+import { ServiceReceiptModal } from "@/components/ServiceReceiptModal";
 
 export const Route = createFileRoute("/_authenticated/service")({ component: ServicePage });
 
@@ -14,6 +15,7 @@ function ServicePage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editTicket, setEditTicket] = useState<ServiceTicket | null>(null);
+  const [selectedReceiptTicket, setSelectedReceiptTicket] = useState<ServiceTicket | null>(null);
 
   const tickets = useQuery({
     queryKey: ["local-service-tickets"],
@@ -22,6 +24,7 @@ function ServicePage() {
 
   function exportServiceExcel() {
     const data = (tickets.data || []).map((t) => ({
+      'Queue Token': t.queue_number || 'N/A',
       'Ticket Number': t.ticket_number,
       'Customer Name': t.customer_name,
       'Customer Mobile': t.customer_mobile,
@@ -47,7 +50,7 @@ function ServicePage() {
     <div className="p-6 space-y-4">
       <PageHeader
         title="Hardware Service & Repair Department"
-        subtitle="Device intake, status tracking pipeline, and printable service receipts"
+        subtitle="Device intake, queue sequence tokens, and WhatsApp service receipts"
         action={
           <div className="flex gap-2">
             <button
@@ -89,6 +92,7 @@ function ServicePage() {
         <table className="w-full text-sm">
           <thead className="text-[10px] uppercase text-muted-foreground tracking-wider bg-card border-b border-border">
             <tr>
+              <th className="text-left px-4 py-2.5">Queue Token</th>
               <th className="text-left px-4 py-2.5">Ticket #</th>
               <th className="text-left px-4 py-2.5">Customer</th>
               <th className="text-left px-4 py-2.5">Device & Serial</th>
@@ -99,52 +103,73 @@ function ServicePage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {tickets.data?.map((t) => (
-              <tr key={t.id} className="hover:bg-secondary/40 transition">
-                <td className="px-4 py-2.5 font-mono font-bold text-primary">{t.ticket_number}</td>
-                <td className="px-4 py-2.5 text-xs">
-                  <div className="font-semibold text-foreground">{t.customer_name}</div>
-                  <div className="font-mono text-muted-foreground">{t.customer_mobile || "No Mobile"}</div>
-                </td>
-                <td className="px-4 py-2.5 text-xs">
-                  <div className="font-medium text-foreground">{t.device_name}</div>
-                  <div className="font-mono text-muted-foreground text-[10px]">S/N: {t.serial_number || "N/A"}</div>
-                </td>
-                <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-xs truncate">{t.issue_description}</td>
-                <td className="px-4 py-2.5 text-center">
-                  <select
-                    value={t.status}
-                    onChange={(e) => updateStatus(t, e.target.value as any)}
-                    className="h-7 rounded text-[11px] font-bold px-2 bg-input border border-border"
-                  >
-                    <option value="Intake">Intake</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Ready">Ready for Pickup</option>
-                    <option value="Delivered">Delivered</option>
-                  </select>
-                </td>
-                <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">
-                  {inr(t.final_cost || t.estimated_cost)}
-                </td>
-                <td className="px-4 py-2.5 text-right space-x-1">
-                  <button
-                    onClick={() => setEditTicket(t)}
-                    className="h-7 px-2.5 rounded bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="h-7 px-2 rounded bg-primary/15 text-primary text-xs font-semibold border border-primary/30 inline-flex items-center"
-                  >
-                    <Printer className="h-3 w-3" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {(() => {
+              // Sort by created_at ascending to assign correct sequential token numbers
+              const sorted = [...(tickets.data || [])].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
+              const tokenMap = new Map(sorted.map((t, i) => [t.id, String(i + 1).padStart(2, '0')]));
+              return tickets.data?.map((t) => {
+                const tokenNum = tokenMap.get(t.id) || '01';
+                const displayToken = `TOKEN-#${tokenNum}`;
+                const enrichedTicket = { ...t, queue_number: displayToken };
+                return (
+                  <tr key={t.id} className="hover:bg-secondary/40 transition">
+                    <td className="px-4 py-2.5">
+                      <span className="font-mono font-bold text-xs bg-primary/20 text-primary px-2 py-0.5 rounded border border-primary/30 inline-flex items-center gap-1">
+                        <Ticket className="h-3 w-3" /> {displayToken}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 font-mono font-bold text-foreground">{t.ticket_number}</td>
+                    <td className="px-4 py-2.5 text-xs">
+                      <div className="font-semibold text-foreground">{t.customer_name}</div>
+                      <div className="font-mono text-muted-foreground">{t.customer_mobile || "No Mobile"}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs">
+                      <div className="font-medium text-foreground">{t.device_name}</div>
+                      <div className="font-mono text-muted-foreground text-[10px]">S/N: {t.serial_number || "N/A"}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-xs truncate">{t.issue_description}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      <select
+                        value={t.status}
+                        onChange={(e) => updateStatus(t, e.target.value as any)}
+                        className="h-7 rounded text-[11px] font-bold px-2 bg-input border border-border"
+                      >
+                        <option value="Intake">Intake</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Ready">Ready for Pickup</option>
+                        <option value="Delivered">Delivered</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-primary">
+                      {inr(t.final_cost || t.estimated_cost)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setEditTicket(t)}
+                          title="Edit ticket"
+                          className="h-8 px-3 rounded-md bg-secondary hover:bg-muted text-xs font-semibold border border-border inline-flex items-center gap-1.5 transition"
+                        >
+                          <Pencil className="h-3.5 w-3.5" /> Edit
+                        </button>
+                        <button
+                          onClick={() => setSelectedReceiptTicket(enrichedTicket)}
+                          title="View, Print & WhatsApp Receipt"
+                          className="h-8 px-3 rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 text-xs font-semibold border border-emerald-500/30 inline-flex items-center gap-1.5 transition"
+                        >
+                          <Printer className="h-3.5 w-3.5" /> Receipt
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              });
+            })()}
             {tickets.data?.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-sm text-muted-foreground">
+                <td colSpan={8} className="text-center py-12 text-sm text-muted-foreground">
                   No hardware service tickets logged yet.
                 </td>
               </tr>
@@ -160,35 +185,52 @@ function ServicePage() {
             setShowModal(false);
             setEditTicket(null);
           }}
-          onSaved={() => {
+          onSaved={(savedTicket) => {
             qc.invalidateQueries({ queryKey: ["local-service-tickets"] });
             setShowModal(false);
             setEditTicket(null);
+            if (savedTicket) {
+              setSelectedReceiptTicket(savedTicket);
+            }
           }}
+        />
+      )}
+
+      {selectedReceiptTicket && (
+        <ServiceReceiptModal
+          ticket={selectedReceiptTicket}
+          onClose={() => setSelectedReceiptTicket(null)}
         />
       )}
     </div>
   );
 }
 
+const L = ({ label, children }: any) => (
+  <label className="block">
+    <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>
+    {children}
+  </label>
+);
+
 function ServiceTicketModal({
   ticket,
   onClose,
   onSaved,
 }: {
-  ticket: ServiceTicket | null;
+  ticket?: ServiceTicket | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (savedTicket?: ServiceTicket) => void;
 }) {
-  const [f, setF] = useState<Partial<ServiceTicket>>({
-    customer_name: ticket?.customer_name ?? "",
-    customer_mobile: ticket?.customer_mobile ?? "",
-    device_name: ticket?.device_name ?? "",
-    serial_number: ticket?.serial_number ?? "",
-    issue_description: ticket?.issue_description ?? "",
-    estimated_cost: ticket?.estimated_cost ?? 0,
-    final_cost: ticket?.final_cost ?? 0,
-    status: ticket?.status ?? "Intake",
+  const [f, setF] = useState({
+    customer_name: ticket?.customer_name || "",
+    customer_mobile: ticket?.customer_mobile || "",
+    device_name: ticket?.device_name || "",
+    serial_number: ticket?.serial_number || "",
+    issue_description: ticket?.issue_description || "",
+    estimated_cost: ticket?.estimated_cost || 0,
+    final_cost: ticket?.final_cost || ticket?.estimated_cost || 0,
+    status: ticket?.status || "Intake",
   });
 
   function submit(e: React.FormEvent) {
@@ -197,13 +239,12 @@ function ServiceTicketModal({
       toast.error("Customer name and device name required");
       return;
     }
-    db.saveServiceTicket({ ...f, id: ticket?.id } as any);
-    toast.success(ticket ? "Service ticket updated" : "Service ticket created");
-    onSaved();
+    const saved = db.saveServiceTicket({ ...f, id: ticket?.id } as any);
+    toast.success(ticket ? "Service ticket updated" : "Service ticket intake created");
+    onSaved(saved);
   }
 
   const ic = "w-full h-9 rounded bg-input border border-border px-3 text-xs focus:outline-none focus:border-primary";
-  const L = ({ label, children }: any) => <label className="block"><div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">{label}</div>{children}</label>;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
@@ -229,8 +270,13 @@ function ServiceTicketModal({
             <L label="Device Name / Model *">
               <input required value={f.device_name} onChange={(e) => setF({ ...f, device_name: e.target.value })} placeholder="e.g. Havells Inverter 1050VA" className={ic} />
             </L>
-            <L label="Serial Number">
-              <input value={f.serial_number} onChange={(e) => setF({ ...f, serial_number: e.target.value })} className={`${ic} font-mono`} />
+            <L label="Serial Number (S/N)">
+              <input
+                value={f.serial_number}
+                onChange={(e) => setF({ ...f, serial_number: e.target.value })}
+                placeholder="Auto-generated if empty"
+                className={`${ic} font-mono`}
+              />
             </L>
           </div>
 

@@ -111,6 +111,7 @@ export class SQLiteDatabaseManager {
         id TEXT PRIMARY KEY,
         name TEXT,
         company_name TEXT,
+        phone TEXT,
         mobile TEXT,
         email TEXT,
         address TEXT,
@@ -124,9 +125,12 @@ export class SQLiteDatabaseManager {
         vendor_id TEXT,
         vendor_name TEXT,
         order_date TEXT,
+        expected_date TEXT,
         status TEXT,
         total_amount REAL,
         paid_amount REAL DEFAULT 0,
+        tax_amount REAL DEFAULT 0,
+        discount_amount REAL DEFAULT 0,
         notes TEXT,
         created_at TEXT
       );
@@ -136,8 +140,10 @@ export class SQLiteDatabaseManager {
         product_id TEXT,
         product_name TEXT,
         qty REAL,
+        unit TEXT,
         unit_price REAL,
         cost_price REAL,
+        gst_rate REAL DEFAULT 0,
         tax_rate REAL,
         total_price REAL,
         total REAL
@@ -243,9 +249,16 @@ export class SQLiteDatabaseManager {
       `ALTER TABLE invoices ADD COLUMN is_synced REAL DEFAULT 0;`,
       `ALTER TABLE invoice_items ADD COLUMN is_return INTEGER DEFAULT 0;`,
       `ALTER TABLE vendors ADD COLUMN balance_due REAL DEFAULT 0;`,
+      `ALTER TABLE vendors ADD COLUMN phone TEXT;`,
+      `ALTER TABLE vendors ADD COLUMN email TEXT;`,
       `ALTER TABLE purchase_orders ADD COLUMN paid_amount REAL DEFAULT 0;`,
+      `ALTER TABLE purchase_orders ADD COLUMN expected_date TEXT;`,
+      `ALTER TABLE purchase_orders ADD COLUMN tax_amount REAL DEFAULT 0;`,
+      `ALTER TABLE purchase_orders ADD COLUMN discount_amount REAL DEFAULT 0;`,
       `ALTER TABLE purchase_items ADD COLUMN cost_price REAL DEFAULT 0;`,
       `ALTER TABLE purchase_items ADD COLUMN total REAL DEFAULT 0;`,
+      `ALTER TABLE purchase_items ADD COLUMN unit TEXT;`,
+      `ALTER TABLE purchase_items ADD COLUMN gst_rate REAL DEFAULT 0;`,
       `ALTER TABLE invoices ADD COLUMN exchange_amount REAL DEFAULT 0;`,
       `ALTER TABLE invoices ADD COLUMN exchange_notes TEXT;`,
     ];
@@ -294,6 +307,12 @@ export class SQLiteDatabaseManager {
     const store: any = {};
     for (const table of tables) {
       const rows = await db.all(`SELECT * FROM ${table}`);
+      if (table === 'vendors') {
+        rows.forEach((r: any) => {
+          r.phone = r.phone || r.mobile || '';
+          r.mobile = r.mobile || r.phone || '';
+        });
+      }
       store[table] = rows;
     }
 
@@ -324,6 +343,11 @@ export class SQLiteDatabaseManager {
       const val = typeof data.value === 'object' ? JSON.stringify(data.value) : String(data.value);
       await db.run(sql, [data.key, val]);
       return;
+    }
+
+    if (table === 'vendors') {
+      if (data.phone && !data.mobile) data.mobile = data.phone;
+      if (data.mobile && !data.phone) data.phone = data.mobile;
     }
 
     const tableCols = await this.getTableColumns(table);

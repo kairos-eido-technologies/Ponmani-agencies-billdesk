@@ -1,6 +1,7 @@
 import React from "react";
 import { inr, qty } from "@/lib/format";
 import { Invoice, InvoiceItem } from "@/lib/db/db";
+import { PonmaniLogo } from "./PonmaniLogo";
 
 interface ThermalReceiptProps {
   invoice: Invoice;
@@ -84,10 +85,8 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
       }}
     >
       {/* ─── BRANDING HEADER ─── */}
-      <div className="text-center pb-2 mb-2 border-b-2 border-dashed border-black">
-        <div className="bg-black text-white font-black text-sm tracking-wider py-1 px-2 uppercase rounded-sm inline-block mb-1">
-          {shopName}
-        </div>
+      <div className="text-center pb-2 mb-2 border-b-2 border-dashed border-black flex flex-col items-center">
+        <PonmaniLogo variant="bw" className="h-20 w-auto mx-auto mb-1" />
         <div className="text-[9.5px] font-bold tracking-tight uppercase">
           {storeSettings?.receipt_header_note || "Hardware • Electricals • Electronics"}
         </div>
@@ -234,7 +233,7 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
             <div className="font-bold text-[9.5px]">*** Thank You For Your Business! ***</div>
             <div>Goods once sold can be exchanged within 7 days.</div>
             <div>Please retain this bill for warranty & service reference.</div>
-            <div className="font-bold mt-1 text-[8px]">PONMANI CONSOLE • OFFLINE RETAIL SYSTEM</div>
+            <div className="font-bold mt-1 text-[8px]">PONMANI AGENCIES • RETAIL & SERVICE CONSOLE</div>
           </>
         )}
       </div>

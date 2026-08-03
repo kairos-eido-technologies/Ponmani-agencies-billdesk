@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { db, Invoice, InvoiceItem } from "@/lib/db/db";
 import { ThermalReceipt } from "./ThermalReceipt";
+import { A4Receipt } from "./A4Receipt";
 import { Printer, Download, X, FileText, Receipt, Check, Share2, Phone, MessageSquare, Clipboard, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import { captureReceiptAsImage } from "@/lib/capture-receipt-image";
 
 interface BillViewerModalProps {
   invoiceId?: string;
@@ -15,27 +17,21 @@ interface BillViewerModalProps {
 
 // Generate formatted WhatsApp text receipt
 function generateWhatsAppText(i: Invoice, items: InvoiceItem[], storeSettings: any) {
-  const shopName = storeSettings?.shop_name || "PONMANI AGENCIES";
-  const shopPhone = storeSettings?.shop_phone || "+91 94422 12345";
-  const shopAddress = storeSettings?.shop_address || "Tenkasi, TN";
-
-  let t = `*${shopName}*\n`;
-  t += `_${storeSettings?.receipt_header_note || "Hardware • Electricals • Electronics"}_\n`;
-  t += `${shopAddress}\n`;
-  t += `Ph: ${shopPhone}\n`;
+  let t = `*BILL RECEIPT: ${i.invoice_number}*\n`;
+  t += `*${(storeSettings?.shop_name || "PONMANI AGENCIES").toUpperCase()}*\n`;
+  t += `${storeSettings?.shop_address || "Tenkasi, Tamil Nadu"}\n`;
+  t += `Ph: ${storeSettings?.shop_phone || "+91 94422 12345"}\n`;
   t += `-----------------------------\n`;
-  t += `*Invoice #:* ${i.invoice_number}\n`;
-  t += `*Date:* ${new Date(i.created_at).toLocaleString('en-IN')}\n`;
-  t += `*Customer:* ${i.customer_name}\n`;
+  t += `*Customer:* ${i.customer_name || "Walk-in Customer"}\n`;
   if (i.customer_mobile) t += `*Mobile:* ${i.customer_mobile}\n`;
-  t += `*Payment:* ${i.payment_method}\n`;
+  t += `*Date:* ${new Date(i.created_at).toLocaleString("en-IN")}\n`;
   t += `-----------------------------\n`;
-  t += `*ITEMS:*\n`;
+  t += `*ITEMS PURCHASED:*\n`;
 
-  items.forEach((it, idx) => {
-    const name = it.product_name || "Item #" + (idx + 1);
-    const qtyStr = it.qty.toString();
-    const rateStr = Number(it.unit_price).toFixed(2);
+  items.forEach((it: any, idx: number) => {
+    const name = it.product_name || it.name || "Item #" + (idx + 1);
+    const qtyStr = `${it.qty} Pcs`;
+    const rateStr = Number(it.unit_price || it.price || 0).toFixed(2);
     const amtStr = Number(it.total_price || it.qty * it.unit_price).toFixed(2);
     t += `${idx + 1}. *${name}* — ${qtyStr} x ₹${rateStr} = *₹${amtStr}*\n`;
   });
@@ -53,131 +49,6 @@ function generateWhatsAppText(i: Invoice, items: InvoiceItem[], storeSettings: a
   return t;
 }
 
-// Convert DOM element to PNG and copy to Clipboard
-async function copyReceiptAsImage(receiptElement: HTMLElement): Promise<boolean> {
-  try {
-    const width = receiptElement.offsetWidth || 300;
-    const height = receiptElement.offsetHeight || 500;
-
-    const clonedHtml = receiptElement.innerHTML;
-
-    // Self-contained static CSS styles for the thermal receipt layout
-    const styles = `
-      .flex { display: flex; }
-      .justify-between { justify-content: space-between; }
-      .items-center { align-items: center; }
-      .items-start { align-items: flex-start; }
-      .text-center { text-align: center; }
-      .text-right { text-align: right; }
-      .font-bold { font-weight: bold; }
-      .font-mono { font-family: monospace; }
-      .font-black { font-weight: 900; }
-      .bg-black { background-color: #000; }
-      .bg-gray-100 { background-color: #f3f4f6; }
-      .bg-white { background-color: #fff; }
-      .text-white { color: #fff; }
-      .text-black { color: #000; }
-      .border-t { border-top: 1px solid #000; }
-      .border-b { border-bottom: 1px solid #000; }
-      .border-y { border-top: 1px solid #000; border-bottom: 1px solid #000; }
-      .border-t-2 { border-top: 2px solid #000; }
-      .border-b-2 { border-bottom: 2px solid #000; }
-      .border-dashed { border-style: dashed; }
-      .py-1 { padding-top: 4px; padding-bottom: 4px; }
-      .py-2 { padding-top: 8px; padding-bottom: 8px; }
-      .px-1 { padding-left: 4px; padding-right: 4px; }
-      .px-2 { padding-left: 8px; padding-right: 8px; }
-      .pb-2 { padding-bottom: 8px; }
-      .mb-2 { margin-bottom: 8px; }
-      .mt-2 { margin-top: 8px; }
-      .mt-0.5 { margin-top: 2px; }
-      .inline-block { display: inline-block; }
-      .w-10 { width: 40px; }
-      .w-16 { width: 64px; }
-      .w-20 { width: 80px; }
-      .flex-1 { flex: 1; }
-      .uppercase { text-transform: uppercase; }
-      .underline { text-decoration: underline; }
-      .text-sm { font-size: 14px; }
-      .text-xs { font-size: 12px; }
-      .text-\\[10px\\] { font-size: 10px; }
-      .text-\\[9\\.5px\\] { font-size: 9.5px; }
-      .text-\\[9px\\] { font-size: 9px; }
-      .text-\\[8\\.5px\\] { font-size: 8.5px; }
-      .text-\\[8px\\] { font-size: 8px; }
-      .tracking-wider { letter-spacing: 0.05em; }
-    `;
-
-    // Create standalone SVG with embedded foreignObject and cloned markup
-    const svgString = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-        <style>
-          ${styles}
-        </style>
-        <foreignObject width="100%" height="100%">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: inherit; background: white; color: black; padding: 12px; height: 100%; box-sizing: border-box;">
-            ${clonedHtml}
-          </div>
-        </foreignObject>
-      </svg>
-    `;
-
-    const base64Svg = window.btoa(unescape(encodeURIComponent(svgString)));
-    const dataURL = `data:image/svg+xml;base64,${base64Svg}`;
-
-    return new Promise((resolve) => {
-      const image = new Image();
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d");
-        if (context) {
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, width, height);
-          context.drawImage(image, 0, 0);
-
-          canvas.toBlob(async (blob) => {
-            if (blob) {
-              try {
-                // Try writing to clipboard
-                const item = new ClipboardItem({ "image/png": blob });
-                await navigator.clipboard.write([item]);
-                resolve(true);
-              } catch (err) {
-                console.error("Clipboard API write failed, attempting download fallback:", err);
-                try {
-                  const link = document.createElement("a");
-                  link.href = canvas.toDataURL("image/png");
-                  link.download = `receipt_${Date.now()}.png`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  resolve(true); // Treat as success since image is downloaded
-                } catch (dlErr) {
-                  console.error("Download fallback failed:", dlErr);
-                  resolve(false);
-                }
-              }
-            } else {
-              resolve(false);
-            }
-          }, "image/png");
-        } else {
-          resolve(false);
-        }
-      };
-      image.onerror = () => {
-        resolve(false);
-      };
-      image.src = dataURL;
-    });
-  } catch (e) {
-    console.error(e);
-    return false;
-  }
-}
-
 export function BillViewerModal({
   invoiceId,
   invoiceData: initialData,
@@ -192,6 +63,7 @@ export function BillViewerModal({
   const [copyingImg, setCopyingImg] = useState(false);
   const [copyingTxt, setCopyingTxt] = useState(false);
   const receiptRef = useRef<HTMLDivElement>(null);
+  const a4ReceiptRef = useRef<HTMLDivElement>(null);
   const hasAutoPrinted = useRef(false);
 
   // Fetch invoice details if ID is provided
@@ -350,7 +222,9 @@ export function BillViewerModal({
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="bg-card text-card-foreground border border-border rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+          className={`bg-card text-card-foreground border border-border rounded-xl shadow-2xl w-full flex flex-col max-h-[90vh] overflow-hidden animate-in fade-in zoom-in-95 duration-150 transition-all ${
+            mode === "a4" ? "max-w-5xl" : "max-w-3xl"
+          }`}
         >
           {/* Header */}
           <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-muted/30">
@@ -407,7 +281,7 @@ export function BillViewerModal({
           </div>
 
           {/* Body Preview Content */}
-          <div className="p-6 overflow-y-auto flex-1 flex justify-center bg-zinc-900/50">
+          <div className="p-4 sm:p-8 pb-16 sm:pb-20 overflow-y-auto overflow-x-auto flex-1 flex justify-center bg-zinc-900/50 w-full">
             {query.isLoading && !invoiceObj ? (
               <div className="py-12 text-center text-sm text-muted-foreground animate-pulse">
                 Loading bill data...
@@ -417,84 +291,12 @@ export function BillViewerModal({
                 Bill details not found.
               </div>
             ) : mode === "thermal" ? (
-              <div ref={receiptRef} className="shadow-2xl rounded overflow-hidden border border-gray-300">
+              <div ref={receiptRef} className="shadow-2xl rounded overflow-visible border border-gray-300 bg-white mb-8 pb-4">
                 <ThermalReceipt invoice={invoiceObj} items={items} storeSettings={storeSettings} />
               </div>
             ) : (
-              /* A4 Bill Layout */
-              <div
-                className="bg-white text-black rounded shadow-2xl p-6"
-                style={{ width: "190mm", minHeight: "250mm", fontFamily: "Arial, sans-serif", fontSize: "11px", lineHeight: "1.5" }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "2px solid #000", paddingBottom: "10px", marginBottom: "12px" }}>
-                  <div>
-                    <div style={{ fontSize: "18px", fontWeight: "bold" }}>{storeSettings?.shop_name || "PONMANI AGENCIES"}</div>
-                    <div style={{ fontSize: "10px", color: "#444" }}>Hardware, Electricals & Electronics</div>
-                    <div style={{ fontSize: "10px", color: "#444" }}>{storeSettings?.shop_address || "Tenkasi, Tamil Nadu — 627811"}</div>
-                    {isGst && <div style={{ fontSize: "10px", color: "#444" }}>GSTIN: {storeSettings?.shop_gstin || "33AAPFP1234H1Z9"}</div>}
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "15px", fontWeight: "bold" }}>{isGst ? "TAX INVOICE" : "SALE BILL"}</div>
-                    <div style={{ fontSize: "12px", fontWeight: "bold", color: "#1a56db" }}>{invoiceObj.invoice_number}</div>
-                    <div style={{ fontSize: "10px" }}>Date: {dateStr}</div>
-                    <div style={{ fontSize: "10px" }}>Payment: {invoiceObj.payment_method}</div>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: "12px", padding: "8px", background: "#f8f9fa", borderRadius: "4px", border: "1px solid #e9ecef" }}>
-                  <div style={{ fontWeight: "bold" }}>Customer Details:</div>
-                  <div style={{ fontSize: "12px", fontWeight: "bold" }}>{invoiceObj.customer_name}</div>
-                  {invoiceObj.customer_mobile && <div>Mobile: {invoiceObj.customer_mobile}</div>}
-                </div>
-
-                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "12px" }}>
-                  <thead>
-                    <tr style={{ background: "#1e293b", color: "#fff" }}>
-                      <th style={{ padding: "6px 8px", textAlign: "left" }}>Item Description</th>
-                      <th style={{ padding: "6px 8px", textAlign: "center" }}>Qty</th>
-                      <th style={{ padding: "6px 8px", textAlign: "right" }}>Rate (₹)</th>
-                      {isGst && <th style={{ padding: "6px 8px", textAlign: "right" }}>GST%</th>}
-                      <th style={{ padding: "6px 8px", textAlign: "right" }}>Amount (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((it: any, idx: number) => {
-                      const name = it.product_name || it.name || "Item #" + (idx + 1);
-                      const qtyVal = Number(it.qty || 1);
-                      const rateVal = Number(it.unit_price || it.price || 0);
-                      const totalVal = Number(it.total_price ?? (qtyVal * rateVal));
-                      return (
-                        <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0", background: idx % 2 === 0 ? "#fff" : "#f8fafc" }}>
-                          <td style={{ padding: "6px 8px" }}>
-                            <div style={{ fontWeight: "bold" }}>{name}</div>
-                            {it.barcode && <div style={{ fontSize: "9px", color: "#64748b" }}>{it.barcode}</div>}
-                          </td>
-                          <td style={{ padding: "6px 8px", textAlign: "center" }}>{qtyVal}</td>
-                          <td style={{ padding: "6px 8px", textAlign: "right", fontFamily: "monospace" }}>{rateVal.toFixed(2)}</td>
-                          {isGst && <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "10px" }}>{it.tax_rate || 0}%</td>}
-                          <td style={{ padding: "6px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: "bold" }}>{totalVal.toFixed(2)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <div style={{ width: "250px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>Subtotal:</span><span>₹{Number(invoiceObj.subtotal).toFixed(2)}</span></div>
-                    {invoiceObj.discount_amount > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", color: "#dc2626" }}><span>Discount (-):</span><span>-₹{Number(invoiceObj.discount_amount).toFixed(2)}</span></div>}
-                    {isGst && invoiceObj.tax_amount > 0 && (
-                      <>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "10px" }}><span>CGST:</span><span>₹{cgst.toFixed(2)}</span></div>
-                        <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "10px" }}><span>SGST:</span><span>₹{sgst.toFixed(2)}</span></div>
-                      </>
-                    )}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "14px", borderTop: "2px solid #000", marginTop: "6px", paddingTop: "6px" }}>
-                      <span>GRAND TOTAL:</span>
-                      <span>₹{Number(invoiceObj.grand_total).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
+              <div ref={a4ReceiptRef} className="shadow-2xl rounded overflow-visible max-w-full bg-white mb-8 pb-4">
+                <A4Receipt invoice={invoiceObj} items={items} storeSettings={storeSettings} />
               </div>
             )}
           </div>
@@ -570,6 +372,56 @@ export function BillViewerModal({
 
               {/* Format Options */}
               <div className="space-y-2 pt-2">
+                {/* Image format (Primary) */}
+                <button
+                  disabled={copyingImg}
+                  onClick={async () => {
+                    const rawEl = mode === "a4" ? a4ReceiptRef.current : receiptRef.current;
+                    const targetEl = (rawEl?.querySelector(".a4-sheet") as HTMLElement) || (rawEl?.querySelector(".thermal-receipt") as HTMLElement) || rawEl;
+                    if (!targetEl) {
+                      toast.error("Receipt preview unavailable to capture image");
+                      return;
+                    }
+                    setCopyingImg(true);
+                    try {
+                      const filename = `Bill_Receipt_${invoiceObj?.invoice_number || 'INV'}.png`;
+                      const ok = await captureReceiptAsImage(targetEl, filename);
+                      if (ok) {
+                        let cleanPhone = whatsappPhone.replace(/\D/g, "");
+                        if (cleanPhone.length === 10) {
+                          cleanPhone = "91" + cleanPhone;
+                        }
+
+                        // wa.me is the correct universal WhatsApp link format
+                        const waUrl = cleanPhone
+                          ? `https://wa.me/${cleanPhone}`
+                          : `https://web.whatsapp.com`;
+
+                        window.open(waUrl, "_blank");
+                        toast.success("Image copied! WhatsApp opened — press Ctrl+V to paste and send.");
+                        setShowWhatsAppDialog(false);
+                      } else {
+                        toast.error("Failed converting receipt to image.");
+                      }
+                    } catch (e: any) {
+                      toast.error("Error generating receipt image: " + e.message);
+                    } finally {
+                      setCopyingImg(false);
+                    }
+                  }}
+                  className="w-full p-3 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-lg flex items-start gap-3 text-left transition"
+                >
+                  <ImageIcon className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-bold text-emerald-400">
+                      Send Receipt as Image (Recommended)
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      Generates PNG receipt image, downloads & copies to clipboard, and opens WhatsApp.
+                    </div>
+                  </div>
+                </button>
+
                 {/* Text format */}
                 <button
                   disabled={copyingTxt}
@@ -582,15 +434,11 @@ export function BillViewerModal({
                         cleanPhone = "91" + cleanPhone;
                       }
                       
-                      const desktopUrl = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(rawText)}`;
+                      const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(rawText)}`;
                       
-                      // Copy text first as convenience
                       await navigator.clipboard.writeText(rawText);
                       toast.success("Bill text copied to clipboard!");
-
-                      // Open WhatsApp Desktop directly
-                      window.location.href = desktopUrl;
-                      
+                      window.open(waUrl, "_blank");
                       setShowWhatsAppDialog(false);
                     } catch (e: any) {
                       toast.error("Failed sending text: " + e.message);
@@ -600,60 +448,11 @@ export function BillViewerModal({
                   }}
                   className="w-full p-3 bg-secondary hover:bg-muted border border-border rounded-lg flex items-start gap-3 text-left transition"
                 >
-                  <MessageSquare className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <MessageSquare className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-xs font-bold text-foreground">Option A: Send Text Invoice</div>
+                    <div className="text-xs font-bold text-foreground">Send Text Format Only</div>
                     <div className="text-[10px] text-muted-foreground mt-0.5">
-                      Sends fully formatted receipt text with item descriptions, prices, totals directly to WhatsApp.
-                    </div>
-                  </div>
-                </button>
-
-                {/* Image format (JPG copy paste) */}
-                <button
-                  disabled={copyingImg || mode !== "thermal"}
-                  onClick={async () => {
-                    if (!receiptRef.current) {
-                      toast.error("Please select Thermal Receipt view to copy receipt image");
-                      return;
-                    }
-                    setCopyingImg(true);
-                    try {
-                      const ok = await copyReceiptAsImage(receiptRef.current);
-                      if (ok) {
-                        toast.success("Receipt image copied!");
-                        let cleanPhone = whatsappPhone.replace(/\D/g, "");
-                        if (cleanPhone.length === 10) {
-                          cleanPhone = "91" + cleanPhone;
-                        }
-                        
-                        // Open WhatsApp Desktop directly
-                        window.location.href = `whatsapp://send?phone=${cleanPhone}`;
-
-                        toast.info("WhatsApp Desktop opened. Press Ctrl + V in the message box to paste and send receipt!");
-                        setShowWhatsAppDialog(false);
-                      } else {
-                        toast.error("Failed converting receipt to image. Try Option A.");
-                      }
-                    } catch (e: any) {
-                      toast.error("Error generating receipt image: " + e.message);
-                    } finally {
-                      setCopyingImg(false);
-                    }
-                  }}
-                  className={`w-full p-3 bg-secondary hover:bg-muted border border-border rounded-lg flex items-start gap-3 text-left transition ${
-                    mode !== "thermal" ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  <ImageIcon className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-xs font-bold text-foreground">
-                      Option B: Copy Receipt JPG & Open WhatsApp
-                    </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
-                      {mode !== "thermal"
-                        ? "Only available in Thermal 80mm view mode."
-                        : "Generates beautiful 80mm image, copies to clipboard. Open chat and press Ctrl + V to paste."}
+                      Sends structured plain text receipt to WhatsApp.
                     </div>
                   </div>
                 </button>
@@ -669,80 +468,7 @@ export function BillViewerModal({
           mode === "thermal" ? (
             <ThermalReceipt invoice={invoiceObj} items={items} storeSettings={storeSettings} />
           ) : (
-            <div
-              className="bg-white text-black p-4 mx-auto"
-              style={{ width: "210mm", padding: "10mm", fontFamily: "Arial, sans-serif", fontSize: "11px", lineHeight: "1.5" }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "2px solid #000", paddingBottom: "10px", marginBottom: "12px" }}>
-                <div>
-                  <div style={{ fontSize: "20px", fontWeight: "bold" }}>{storeSettings?.shop_name || "PONMANI AGENCIES"}</div>
-                  <div style={{ fontSize: "11px", color: "#444" }}>Hardware, Electricals & Electronics</div>
-                  <div style={{ fontSize: "11px", color: "#444" }}>{storeSettings?.shop_address || "Tenkasi, Tamil Nadu — 627811"}</div>
-                  {isGst && <div style={{ fontSize: "11px", color: "#444" }}>GSTIN: {storeSettings?.shop_gstin || "33AAPFP1234H1Z9"}</div>}
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "16px", fontWeight: "bold" }}>{isGst ? "TAX INVOICE" : "SALE BILL"}</div>
-                  <div style={{ fontSize: "13px", fontWeight: "bold", color: "#1a56db" }}>{invoiceObj.invoice_number}</div>
-                  <div style={{ fontSize: "11px" }}>Date: {dateStr}</div>
-                  <div style={{ fontSize: "11px" }}>Payment: {invoiceObj.payment_method}</div>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: "12px", padding: "8px", background: "#f8f9fa", borderRadius: "4px" }}>
-                <div style={{ fontWeight: "bold" }}>Customer Details:</div>
-                <div style={{ fontSize: "13px", fontWeight: "bold" }}>{invoiceObj.customer_name}</div>
-                {invoiceObj.customer_mobile && <div>Mobile: {invoiceObj.customer_mobile}</div>}
-              </div>
-
-              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "12px" }}>
-                <thead>
-                  <tr style={{ background: "#1e293b", color: "#fff" }}>
-                    <th style={{ padding: "6px 8px", textAlign: "left" }}>Item Description</th>
-                    <th style={{ padding: "6px 8px", textAlign: "center" }}>Qty</th>
-                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Rate (₹)</th>
-                    {isGst && <th style={{ padding: "6px 8px", textAlign: "right" }}>GST%</th>}
-                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Amount (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it: any, idx: number) => {
-                    const name = it.product_name || it.name || "Item #" + (idx + 1);
-                    const qtyVal = Number(it.qty || 1);
-                    const rateVal = Number(it.unit_price || it.price || 0);
-                    const totalVal = Number(it.total_price ?? (qtyVal * rateVal));
-                    return (
-                      <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                        <td style={{ padding: "6px 8px" }}>
-                          <div style={{ fontWeight: "bold" }}>{name}</div>
-                          {it.barcode && <div style={{ fontSize: "9px", color: "#64748b" }}>{it.barcode}</div>}
-                        </td>
-                        <td style={{ padding: "6px 8px", textAlign: "center" }}>{qtyVal}</td>
-                        <td style={{ padding: "6px 8px", textAlign: "right", fontFamily: "monospace" }}>{rateVal.toFixed(2)}</td>
-                        {isGst && <td style={{ padding: "6px 8px", textAlign: "right", fontSize: "10px" }}>{it.tax_rate || 0}%</td>}
-                        <td style={{ padding: "6px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: "bold" }}>{totalVal.toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <div style={{ width: "250px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>Subtotal:</span><span>₹{Number(invoiceObj.subtotal).toFixed(2)}</span></div>
-                  {invoiceObj.discount_amount > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>Discount (-):</span><span>-₹{Number(invoiceObj.discount_amount).toFixed(2)}</span></div>}
-                  {isGst && invoiceObj.tax_amount > 0 && (
-                    <>
-                      <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "10px" }}><span>CGST:</span><span>₹{cgst.toFixed(2)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "10px" }}><span>SGST:</span><span>₹{sgst.toFixed(2)}</span></div>
-                    </>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "14px", borderTop: "2px solid #000", marginTop: "6px", paddingTop: "6px" }}>
-                    <span>GRAND TOTAL:</span>
-                    <span>₹{Number(invoiceObj.grand_total).toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <A4Receipt invoice={invoiceObj} items={items} storeSettings={storeSettings} />
           )
         )}
       </div>

@@ -115,7 +115,12 @@ export const useCart = create<State & Actions>((set, get) => ({
       loyaltyAvailable: c.loyalty,
       loyaltyRedeem: 0,
     }),
-  setLoyaltyRedeem: (n) => set({ loyaltyRedeem: Math.max(0, Math.min(n, get().loyaltyAvailable)) }),
+  setLoyaltyRedeem: (n) => {
+    const linesSub = get().lines.reduce((acc, l) => acc + l.price * l.qty, 0);
+    const billNet = Math.max(0, Math.ceil(linesSub - get().invoiceDiscount - (get().exchangeAmount || 0)));
+    const maxRedeem = Math.min(get().loyaltyAvailable, billNet);
+    set({ loyaltyRedeem: Math.max(0, Math.min(n, maxRedeem)) });
+  },
   setInvoiceDiscount: (n) => set({ invoiceDiscount: Math.max(0, n) }),
   setExchange: (amount, notes) => set({ exchangeAmount: Math.max(0, amount), exchangeNotes: notes }),
   toggleGst: (v) => set((s) => ({ gstEnabled: v ?? !s.gstEnabled })),

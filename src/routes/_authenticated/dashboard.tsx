@@ -57,7 +57,7 @@ function Dashboard() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        title="Offline Store Terminal Dashboard"
+        title="Store Terminal Dashboard"
         subtitle="Ponmani Agencies Hardware & Electronics — Real-time On-Premise Metrics"
         action={
           <Link
@@ -95,7 +95,7 @@ function Dashboard() {
         <div className="card-surface p-4 lg:col-span-2">
           <div className="text-sm font-medium mb-3 flex items-center justify-between">
             <span>Daily Sales Trend (Last 7 Days)</span>
-            <span className="text-xs text-muted-foreground font-mono">100% Offline DB</span>
+            <span className="text-xs text-muted-foreground font-mono">Local DB</span>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">

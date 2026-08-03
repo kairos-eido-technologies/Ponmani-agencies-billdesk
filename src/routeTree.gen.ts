@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedAppsRouteImport } from './routes/_authenticated/apps'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedCustomersRouteImport } from './routes/_authenticated/customers'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
@@ -41,6 +42,11 @@ const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAppsRoute = AuthenticatedAppsRouteImport.update({
+  id: '/apps',
+  path: '/apps',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
   id: '/billing',
@@ -122,6 +128,7 @@ const AuthenticatedInvoicesIdRoute = AuthenticatedInvoicesIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/apps': typeof AuthenticatedAppsRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/customers': typeof AuthenticatedCustomersRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/apps': typeof AuthenticatedAppsRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/customers': typeof AuthenticatedCustomersRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/apps': typeof AuthenticatedAppsRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/customers': typeof AuthenticatedCustomersRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
@@ -182,6 +191,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/apps'
     | '/billing'
     | '/customers'
     | '/dashboard'
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/apps'
     | '/billing'
     | '/customers'
     | '/dashboard'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/apps'
     | '/_authenticated/billing'
     | '/_authenticated/customers'
     | '/_authenticated/dashboard'
@@ -265,6 +277,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/apps': {
+      id: '/_authenticated/apps'
+      path: '/apps'
+      fullPath: '/apps'
+      preLoaderRoute: typeof AuthenticatedAppsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/billing': {
       id: '/_authenticated/billing'
@@ -390,6 +409,7 @@ const AuthenticatedInvoicesRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAppsRoute: typeof AuthenticatedAppsRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
   AuthenticatedCustomersRoute: typeof AuthenticatedCustomersRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
@@ -406,6 +426,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAppsRoute: AuthenticatedAppsRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
   AuthenticatedCustomersRoute: AuthenticatedCustomersRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,

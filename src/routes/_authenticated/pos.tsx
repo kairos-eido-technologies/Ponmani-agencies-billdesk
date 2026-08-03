@@ -424,7 +424,13 @@ function POSPage() {
           <div className="flex gap-2">
             <input
               value={cart.customerMobile}
-              onChange={(e) => cart.setCustomer({ id: cart.customerId, mobile: e.target.value, name: cart.customerName, loyalty: cart.loyaltyAvailable })}
+              onChange={(e) => {
+                const val = e.target.value;
+                cart.setCustomer({ id: cart.customerId, mobile: val, name: cart.customerName, loyalty: cart.loyaltyAvailable });
+                if (val.replace(/\D/g, "").length === 10) {
+                  lookupCustomer(val);
+                }
+              }}
               onBlur={(e) => lookupCustomer(e.target.value)}
               placeholder="Customer Mobile (10 digits)"
               className="flex-1 h-9 px-3 rounded bg-input border border-border text-xs font-mono focus:border-primary text-foreground"
@@ -443,8 +449,8 @@ function POSPage() {
               <span className="font-semibold text-primary">Loyalty Points Available: {cart.loyaltyAvailable}</span>
               <button
                 type="button"
-                onClick={() => cart.setLoyaltyRedeem(Math.min(cart.loyaltyAvailable, totals.total))}
-                className="px-2 py-1 bg-primary text-primary-foreground rounded text-[10px] font-bold"
+                onClick={() => cart.setLoyaltyRedeem(Math.min(cart.loyaltyAvailable, totals.subtotal))}
+                className="px-2 py-1 bg-primary text-primary-foreground rounded text-[10px] font-bold hover:opacity-90 transition"
               >
                 Redeem
               </button>
