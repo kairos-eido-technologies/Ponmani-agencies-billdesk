@@ -498,20 +498,20 @@ class OfflineDB {
       ]);
 
       await Promise.all([
-        this.dexieDb.users.bulkAdd(store.users),
-        this.dexieDb.inventory.bulkAdd(store.inventory),
-        this.dexieDb.vendors.bulkAdd(store.vendors),
-        this.dexieDb.purchase_orders.bulkAdd(store.purchase_orders),
-        this.dexieDb.purchase_items.bulkAdd(store.purchase_items),
-        this.dexieDb.customers.bulkAdd(store.customers),
-        this.dexieDb.loyalty_ledger.bulkAdd(store.loyalty_ledger),
-        this.dexieDb.invoices.bulkAdd(store.invoices),
-        this.dexieDb.invoice_items.bulkAdd(store.invoice_items),
-        this.dexieDb.service_tickets.bulkAdd(store.service_tickets),
-        this.dexieDb.scrap_entries.bulkAdd(store.scrap_entries),
-        this.dexieDb.godown_transfers.bulkAdd(store.godown_transfers),
-        this.dexieDb.backups_log.bulkAdd(store.backups_log),
-        this.dexieDb.settings.bulkAdd(Object.entries(store.settings).map(([k, v]) => ({ key: k, value: v }))),
+        this.dexieDb.users.bulkPut(store.users),
+        this.dexieDb.inventory.bulkPut(store.inventory),
+        this.dexieDb.vendors.bulkPut(store.vendors),
+        this.dexieDb.purchase_orders.bulkPut(store.purchase_orders),
+        this.dexieDb.purchase_items.bulkPut(store.purchase_items),
+        this.dexieDb.customers.bulkPut(store.customers),
+        this.dexieDb.loyalty_ledger.bulkPut(store.loyalty_ledger),
+        this.dexieDb.invoices.bulkPut(store.invoices),
+        this.dexieDb.invoice_items.bulkPut(store.invoice_items),
+        this.dexieDb.service_tickets.bulkPut(store.service_tickets),
+        this.dexieDb.scrap_entries.bulkPut(store.scrap_entries),
+        this.dexieDb.godown_transfers.bulkPut(store.godown_transfers),
+        this.dexieDb.backups_log.bulkPut(store.backups_log),
+        this.dexieDb.settings.bulkPut(Object.entries(store.settings).map(([k, v]) => ({ key: k, value: v }))),
       ]);
       isSyncingFromSQLite = false;
     } catch (e) {
@@ -630,38 +630,38 @@ class OfflineDB {
 
     isSyncingFromSQLite = true;
     log('Writing inventory & vendors...');
-    await this.dexieDb.inventory.bulkAdd(seed.inventory);
-    await this.dexieDb.vendors.bulkAdd(seed.vendors);
+    await this.dexieDb.inventory.bulkPut(seed.inventory);
+    await this.dexieDb.vendors.bulkPut(seed.vendors);
 
     log(`Writing ${seed.customers.length} customers...`);
-    await this.dexieDb.customers.bulkAdd(seed.customers);
+    await this.dexieDb.customers.bulkPut(seed.customers);
 
     log(`Writing ${seed.purchase_orders.length} purchase orders & ${seed.purchase_items.length} items...`);
-    await this.dexieDb.purchase_orders.bulkAdd(seed.purchase_orders);
-    await this.dexieDb.purchase_items.bulkAdd(seed.purchase_items);
+    await this.dexieDb.purchase_orders.bulkPut(seed.purchase_orders);
+    await this.dexieDb.purchase_items.bulkPut(seed.purchase_items);
 
     const INV_BATCH = 500;
     for (let i = 0; i < seed.invoices.length; i += INV_BATCH) {
       const current = Math.min(i + INV_BATCH, seed.invoices.length);
       log(`Writing invoices (${current} / ${seed.invoices.length})...`);
-      await this.dexieDb.invoices.bulkAdd(seed.invoices.slice(i, current));
+      await this.dexieDb.invoices.bulkPut(seed.invoices.slice(i, current));
     }
 
     const II_BATCH = 1500;
     for (let i = 0; i < seed.invoice_items.length; i += II_BATCH) {
       const current = Math.min(i + II_BATCH, seed.invoice_items.length);
       log(`Writing invoice line items (${current} / ${seed.invoice_items.length})...`);
-      await this.dexieDb.invoice_items.bulkAdd(seed.invoice_items.slice(i, current));
+      await this.dexieDb.invoice_items.bulkPut(seed.invoice_items.slice(i, current));
     }
 
     log('Writing service tickets, scrap & transfers...');
-    await this.dexieDb.service_tickets.bulkAdd(seed.service_tickets);
-    await this.dexieDb.scrap_entries.bulkAdd(seed.scrap_entries);
-    await this.dexieDb.godown_transfers.bulkAdd(seed.godown_transfers);
-    await this.dexieDb.loyalty_ledger.bulkAdd(seed.loyalty_ledger);
+    await this.dexieDb.service_tickets.bulkPut(seed.service_tickets);
+    await this.dexieDb.scrap_entries.bulkPut(seed.scrap_entries);
+    await this.dexieDb.godown_transfers.bulkPut(seed.godown_transfers);
+    await this.dexieDb.loyalty_ledger.bulkPut(seed.loyalty_ledger);
 
     log('Writing settings...');
-    await this.dexieDb.settings.bulkAdd(
+    await this.dexieDb.settings.bulkPut(
       Object.entries(seed.settings).map(([key, value]) => ({ key, value }))
     );
     isSyncingFromSQLite = false;
@@ -730,20 +730,20 @@ class OfflineDB {
           ]);
 
           await Promise.all([
-            this.dexieDb.users.bulkAdd(newData.users || []),
-            this.dexieDb.inventory.bulkAdd(newData.inventory || []),
-            this.dexieDb.vendors.bulkAdd(newData.vendors || []),
-            this.dexieDb.purchase_orders.bulkAdd(newData.purchase_orders || []),
-            this.dexieDb.purchase_items.bulkAdd(newData.purchase_items || []),
-            this.dexieDb.customers.bulkAdd(newData.customers || []),
-            this.dexieDb.loyalty_ledger.bulkAdd(newData.loyalty_ledger || []),
-            this.dexieDb.invoices.bulkAdd(newData.invoices || []),
-            this.dexieDb.invoice_items.bulkAdd(newData.invoice_items || []),
-            this.dexieDb.service_tickets.bulkAdd(newData.service_tickets || []),
-            this.dexieDb.scrap_entries.bulkAdd(newData.scrap_entries || []),
-            this.dexieDb.godown_transfers.bulkAdd(newData.godown_transfers || []),
-            this.dexieDb.backups_log.bulkAdd(newData.backups_log || []),
-            this.dexieDb.settings.bulkAdd(
+            this.dexieDb.users.bulkPut(newData.users || []),
+            this.dexieDb.inventory.bulkPut(newData.inventory || []),
+            this.dexieDb.vendors.bulkPut(newData.vendors || []),
+            this.dexieDb.purchase_orders.bulkPut(newData.purchase_orders || []),
+            this.dexieDb.purchase_items.bulkPut(newData.purchase_items || []),
+            this.dexieDb.customers.bulkPut(newData.customers || []),
+            this.dexieDb.loyalty_ledger.bulkPut(newData.loyalty_ledger || []),
+            this.dexieDb.invoices.bulkPut(newData.invoices || []),
+            this.dexieDb.invoice_items.bulkPut(newData.invoice_items || []),
+            this.dexieDb.service_tickets.bulkPut(newData.service_tickets || []),
+            this.dexieDb.scrap_entries.bulkPut(newData.scrap_entries || []),
+            this.dexieDb.godown_transfers.bulkPut(newData.godown_transfers || []),
+            this.dexieDb.backups_log.bulkPut(newData.backups_log || []),
+            this.dexieDb.settings.bulkPut(
               Object.entries(newData.settings || {}).map(([key, value]) => ({ key, value }))
             ),
           ]);
