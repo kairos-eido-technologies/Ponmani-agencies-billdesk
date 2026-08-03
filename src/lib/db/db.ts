@@ -191,6 +191,8 @@ export interface DBStore {
   settings: Record<string, any>;
 }
 
+const UTENSILS_SEED = generateUtensilsSeedData();
+
 const INITIAL_SEED: DBStore = {
   users: [
     {
@@ -208,35 +210,19 @@ const INITIAL_SEED: DBStore = {
       created_at: new Date().toISOString(),
     },
   ],
-  inventory: [],
-  vendors: [],
-  purchase_orders: [],
-  purchase_items: [],
-  customers: [],
-  loyalty_ledger: [],
-  invoices: [],
-  invoice_items: [],
-  service_tickets: [],
-  scrap_entries: [],
-  godown_transfers: [],
+  inventory: UTENSILS_SEED.inventory,
+  vendors: UTENSILS_SEED.vendors,
+  purchase_orders: UTENSILS_SEED.purchase_orders,
+  purchase_items: UTENSILS_SEED.purchase_items,
+  customers: UTENSILS_SEED.customers,
+  loyalty_ledger: UTENSILS_SEED.loyalty_ledger,
+  invoices: UTENSILS_SEED.invoices,
+  invoice_items: UTENSILS_SEED.invoice_items,
+  service_tickets: UTENSILS_SEED.service_tickets,
+  scrap_entries: UTENSILS_SEED.scrap_entries,
+  godown_transfers: UTENSILS_SEED.godown_transfers,
   backups_log: [],
-  settings: {
-    shop_name: 'Ponmani Agencies',
-    shop_address: '142 Main Road, Tenkasi, Tamil Nadu - 627811',
-    shop_phone: '+91 94422 12345',
-    shop_gstin: '33AAPFP1234H1Z9',
-    receipt_header_note: 'Hardware • Electricals • Electronics',
-    receipt_footer_note: 'Goods once sold can be exchanged within 7 days with original receipt. Thank you for your business!',
-    service_ticket_terms: 'Present this receipt token during device collection. Goods left unclaimed over 30 days are subject to shop terms. Thank you for your business!',
-    po_footer_terms: 'Please acknowledge receipt of this Purchase Order and confirm delivery schedule.',
-    printer_type: 'Thermal ESC/POS 80mm',
-    printer_name: 'POS-80 Series',
-    auto_backup_enabled: true,
-    auto_backup_frequency: 'Daily',
-    retain_backups_count: 30,
-    scanner_prefix: '',
-    scanner_suffix: 'Enter',
-  },
+  settings: UTENSILS_SEED.settings,
 };
 
 let isSyncingFromSQLite = false;
@@ -357,7 +343,7 @@ class OfflineDB {
       if (response.ok) {
         const store = await response.json();
         // If server SQLite database is empty (e.g. newly initialized), initialize with seed
-        if (!store.users || store.users.length === 0) {
+        if (!store.users || store.users.length === 0 || !store.inventory || store.inventory.length === 0) {
           console.log('[SQLite Server] SQLite database is empty. Seeding initial data...');
           this.memoryData = { ...INITIAL_SEED };
           this.isLoaded = true;
