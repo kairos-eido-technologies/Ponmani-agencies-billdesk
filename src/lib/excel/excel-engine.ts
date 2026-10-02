@@ -18,13 +18,14 @@ export class ExcelEngine {
 
     if (type === 'products') {
       filename = 'Ponmani_Products_Import_Template.xlsx';
-      headers = ['Barcode', 'Name', 'Category', 'Unit', 'Cost Price', 'Selling Price', 'Stock Qty', 'Godown Qty', 'MOQ', 'Min Stock Alert', 'SKU Code', 'GST Rate (%)'];
+      headers = ['Barcode', 'Name', 'Category', 'Unit', 'Cost Price', 'MRP', 'Selling Price', 'Stock Qty', 'Godown Qty', 'MOQ', 'Min Stock Alert', 'SKU Code', 'GST Rate (%)'];
       sampleRow = {
         'Barcode': 'PMA100001',
         'Name': 'Havells 2.5 sqmm Wire (100m Blue)',
         'Category': 'Electricals',
         'Unit': 'Roll',
         'Cost Price': 2100,
+        'MRP': 2950,
         'Selling Price': 2650,
         'Stock Qty': 30,
         'Godown Qty': 100,
@@ -72,8 +73,8 @@ export class ExcelEngine {
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
-          const buffer = e.target?.result;
-          const wb = XLSX.read(buffer, { type: 'binary' });
+          const buffer = e.target?.result as ArrayBuffer;
+          const wb = XLSX.read(buffer, { type: 'array', dense: true });
           const firstSheetName = wb.SheetNames[0];
           const ws = wb.Sheets[firstSheetName];
           const rawData = XLSX.utils.sheet_to_json(ws);
@@ -83,7 +84,7 @@ export class ExcelEngine {
         }
       };
       reader.onerror = (error) => reject(error);
-      reader.readAsBinaryString(file);
+      reader.readAsArrayBuffer(file);
     });
   }
 

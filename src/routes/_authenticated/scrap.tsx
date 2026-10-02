@@ -7,23 +7,35 @@ import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr } from "@/lib/format";
 import { Plus, Recycle, FileSpreadsheet, X, Scale } from "lucide-react";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/scrap")({ component: ScrapPage });
 
 function ScrapPage() {
+  const t = useT();
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
 
   const scrapEntries = useQuery({
     queryKey: ["local-scrap-entries"],
+    staleTime: 60_000,
     queryFn: async () => db.getScrapEntries(),
   });
 
-  const totalWeight = (scrapEntries.data || []).reduce((s, e) => s + Number(e.weight_kg), 0);
-  const totalPayout = (scrapEntries.data || []).reduce((s, e) => s + Number(e.total_payout), 0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  const allScrap = scrapEntries.data || [];
+  const totalScrapCount = allScrap.length;
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(totalScrapCount / pageSize) || 1;
+  const activePage = Math.min(currentPage, totalPages);
+  const displayedScrap = pageSize === -1 ? allScrap : allScrap.slice((activePage - 1) * pageSize, activePage * pageSize);
+
+  const totalWeight = allScrap.reduce((s, e) => s + Number(e.weight_kg), 0);
+  const totalPayout = allScrap.reduce((s, e) => s + Number(e.total_payout), 0);
 
   function exportScrapExcel() {
-    const data = (scrapEntries.data || []).map((s) => ({
+    const data = allScrap.map((s) => ({
       'Seller Name': s.customer_name,
       'Seller Mobile': s.customer_mobile,
       'Scrap Item Type': s.item_type,
@@ -40,21 +52,21 @@ function ScrapPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Scrap & E-Waste Buying Center"
-        subtitle="Purchase metal scrap, old motor copper windings, e-waste, and calculate instant seller payouts"
+        title={t("scrap.title")}
+        subtitle={t("scrap.subtitle")}
         action={
           <div className="flex gap-2">
             <button
               onClick={exportScrapExcel}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> Export Excel
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> {t("scrap.exportExcel")}
             </button>
             <button
               onClick={() => setShowModal(true)}
               className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:accent-glow transition"
             >
-              <Plus className="h-4 w-4" /> Record Scrap Purchase
+              <Plus className="h-4 w-4" /> {t("scrap.newEntry")}
             </button>
           </div>
         }
@@ -62,16 +74,16 @@ function ScrapPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card-surface p-4 border-l-4 border-l-emerald-500">
-          <div className="text-xs text-muted-foreground mb-1">Total Purchased Scrap</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("scrap.col.weight")}</div>
           <div className="text-2xl font-bold font-mono text-emerald-400">{totalWeight.toFixed(2)} Kg</div>
         </div>
         <div className="card-surface p-4 border-l-4 border-l-primary">
-          <div className="text-xs text-muted-foreground mb-1">Total Cash Paid Out</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("scrap.col.payout")}</div>
           <div className="text-2xl font-bold font-mono text-primary">{inr(totalPayout)}</div>
         </div>
         <div className="card-surface p-4 border-l-4 border-l-blue-500">
-          <div className="text-xs text-muted-foreground mb-1">Transactions Recorded</div>
-          <div className="text-2xl font-bold font-mono text-blue-400">{scrapEntries.data?.length ?? 0} Sellers</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("dashboard.scrapPayout")}</div>
+          <div className="text-2xl font-bold font-mono text-blue-400">{totalScrapCount}</div>
         </div>
       </div>
 
@@ -79,17 +91,17 @@ function ScrapPage() {
         <table className="w-full text-sm">
           <thead className="text-[10px] uppercase text-muted-foreground tracking-wider bg-card border-b border-border">
             <tr>
-              <th className="text-left px-4 py-2.5">Date & Time</th>
-              <th className="text-left px-4 py-2.5">Seller Name / Mobile</th>
-              <th className="text-left px-4 py-2.5">Scrap Category</th>
-              <th className="text-left px-4 py-2.5">Source / Notes</th>
-              <th className="text-right px-4 py-2.5">Weight (Kg)</th>
-              <th className="text-right px-4 py-2.5">Rate / Kg</th>
-              <th className="text-right px-4 py-2.5">Total Payout</th>
+              <th className="text-left px-4 py-2.5">{t("scrap.col.date")}</th>
+              <th className="text-left px-4 py-2.5">{t("scrap.col.customer")}</th>
+              <th className="text-left px-4 py-2.5">{t("scrap.col.category")}</th>
+              <th className="text-left px-4 py-2.5">{t("scrap.col.notes")}</th>
+              <th className="text-right px-4 py-2.5">{t("scrap.col.weight")}</th>
+              <th className="text-right px-4 py-2.5">{t("scrap.col.rate")}</th>
+              <th className="text-right px-4 py-2.5">{t("scrap.col.payout")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {scrapEntries.data?.map((s) => {
+            {displayedScrap.map((s) => {
               const isEx = s.is_exchange || s.notes?.includes("From POS Bill") || s.notes?.includes("Auto-logged");
               return (
                 <tr key={s.id} className="hover:bg-secondary/40 transition">
@@ -129,7 +141,7 @@ function ScrapPage() {
                 </tr>
               );
             })}
-            {scrapEntries.data?.length === 0 && (
+            {allScrap.length === 0 && (
               <tr>
                 <td colSpan={7} className="text-center py-12 text-sm text-muted-foreground">
                   No scrap buying or exchange records logged yet.
@@ -138,6 +150,63 @@ function ScrapPage() {
             )}
           </tbody>
         </table>
+
+        {/* Pagination Bar */}
+        {totalScrapCount > 0 && (
+          <div className="p-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-muted-foreground">
+              Showing{" "}
+              <span className="font-mono font-bold text-foreground">
+                {pageSize === -1 ? 1 : Math.min((activePage - 1) * pageSize + 1, totalScrapCount)}
+              </span>{" "}
+              to{" "}
+              <span className="font-mono font-bold text-foreground">
+                {pageSize === -1 ? totalScrapCount : Math.min(activePage * pageSize, totalScrapCount)}
+              </span>{" "}
+              of <span className="font-mono font-bold text-foreground">{totalScrapCount}</span> scrap entries
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-2 py-1 bg-secondary border border-border rounded text-xs font-mono font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={-1}>All ({totalScrapCount})</option>
+                </select>
+              </div>
+              {pageSize !== -1 && (
+                <div className="flex items-center gap-1 font-mono">
+                  <button
+                    disabled={activePage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 bg-secondary border border-border rounded disabled:opacity-40 hover:bg-muted font-bold transition"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 font-bold text-primary">
+                    {activePage} / {totalPages}
+                  </span>
+                  <button
+                    disabled={activePage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 bg-secondary border border-border rounded disabled:opacity-40 hover:bg-muted font-bold transition"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {showModal && (

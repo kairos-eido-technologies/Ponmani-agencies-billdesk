@@ -7,10 +7,12 @@ import { useCart, computeTotals } from "@/lib/cart-store";
 import { inr, qty } from "@/lib/format";
 import { Trash2, ScanBarcode, UserPlus, Search, Printer, ChevronDown, Percent, RotateCcw, Bookmark, X } from "lucide-react";
 import { BillViewerModal } from "@/components/BillViewerModal";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/pos")({ component: POSPage });
 
 function POSPage() {
+  const t = useT();
   const cart = useCart();
   const totals = computeTotals(cart as any);
   const [scan, setScan] = useState("");
@@ -98,6 +100,7 @@ function POSPage() {
 
   const products = useQuery({
     queryKey: ["pos-local-products", search],
+    staleTime: 60_000,
     queryFn: async () => {
       const all = db.getInventory();
       if (!search.trim()) return all.slice(0, 30);
@@ -143,6 +146,7 @@ function POSPage() {
       name: item.name,
       barcode: item.barcode,
       price: Number(item.selling_price),
+      mrp: Number(item.mrp ?? item.selling_price),
       gst_rate: Number(item.gst_rate),
       stock_qty: shopQty,
     });
@@ -176,6 +180,7 @@ function POSPage() {
       name: p.name,
       barcode: p.barcode,
       price: Number(p.selling_price),
+      mrp: Number(p.mrp ?? p.selling_price),
       gst_rate: Number(p.gst_rate),
       stock_qty: shopQty,
     });
@@ -212,6 +217,7 @@ function POSPage() {
           product_name: l.name,
           qty: l.qty,
           unit_price: l.price,
+          mrp: l.mrp ?? l.price,
           tax_rate: l.gst_rate,
         })),
       };
@@ -227,6 +233,7 @@ function POSPage() {
         product_name: l.name,
         qty: l.qty,
         unit_price: l.price,
+        mrp: l.mrp ?? l.price,
         tax_rate: l.gst_rate,
         total_price: l.qty * l.price,
       }));
@@ -253,7 +260,7 @@ function POSPage() {
               value={scan}
               onChange={(e) => setScan(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleScan(scan)}
-              placeholder="Scan Barcode (Prefix PMA...) + Press Enter"
+              placeholder={t("pos.scanBarcode")}
               className="w-full h-9 pl-9 pr-3 rounded bg-input border border-border text-xs font-mono focus:border-primary text-foreground"
             />
           </div>
@@ -263,7 +270,7 @@ function POSPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search product name, category, SKU…"
+              placeholder={t("pos.searchProduct")}
               className="w-full h-9 pl-9 pr-3 rounded bg-input border border-border text-xs font-mono text-foreground"
             />
           </div>
@@ -273,10 +280,10 @@ function POSPage() {
         <div className="card-surface flex-1 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-border flex justify-between items-center bg-card">
             <span className="text-xs font-bold uppercase tracking-wider text-foreground">
-              Current POS Sale Cart ({cart.lines.length} Line Items)
+              {t("pos.cartTitle")} ({cart.lines.length} {t("pos.lineItems")})
             </span>
             <button onClick={() => cart.clear()} className="text-xs text-muted-foreground hover:text-destructive transition">
-              Clear Cart
+              {t("pos.clearCart")}
             </button>
           </div>
 
@@ -284,12 +291,12 @@ function POSPage() {
             <table className="w-full text-xs">
               <thead className="bg-card text-[10px] uppercase text-muted-foreground sticky top-0 border-b border-border">
                 <tr>
-                  <th className="text-left px-3 py-2.5">Item Description</th>
-                  <th className="text-right px-3 py-2.5 w-24">Price (₹)</th>
-                  <th className="text-center px-3 py-2.5 w-20">GST %</th>
-                  <th className="text-center px-3 py-2.5 w-20">Qty</th>
-                  <th className="text-right px-3 py-2.5 w-20">Discount</th>
-                  <th className="text-right px-3 py-2.5">Subtotal</th>
+                  <th className="text-left px-3 py-2.5">{t("pos.col.item")}</th>
+                  <th className="text-right px-3 py-2.5 w-24">{t("pos.col.price")}</th>
+                  <th className="text-center px-3 py-2.5 w-20">{t("pos.col.gst")}</th>
+                  <th className="text-center px-3 py-2.5 w-20">{t("pos.col.qty")}</th>
+                  <th className="text-right px-3 py-2.5 w-20">{t("pos.col.discount")}</th>
+                  <th className="text-right px-3 py-2.5">{t("pos.col.subtotal")}</th>
                   <th className="w-10"></th>
                 </tr>
               </thead>
@@ -299,13 +306,18 @@ function POSPage() {
                     <td className="px-3 py-2">
                       <div className="font-semibold text-foreground">{l.name}</div>
                       <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-2">
-                        <span>Barcode: {l.barcode || 'N/A'}</span>
+                        <span>{t("pos.barcode")}: {l.barcode || 'N/A'}</span>
                         <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/30">
                           {l.gst_rate}% GST
                         </span>
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{inr(l.price)}</td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      <div className="font-semibold text-foreground">{inr(l.price)}</div>
+                      {l.mrp && l.mrp > l.price ? (
+                        <div className="text-[10px] text-muted-foreground/80 line-through">MRP: {inr(l.mrp)}</div>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 text-center">
                       <select
                         value={l.gst_rate}
@@ -360,7 +372,7 @@ function POSPage() {
                   <tr>
                     <td colSpan={7} className="text-center py-16 text-sm text-muted-foreground">
                       <ScanBarcode className="h-8 w-8 mx-auto mb-2 opacity-30 text-primary" />
-                      Scan barcode or click items below to populate sale items.
+                      {t("pos.emptyCart")}
                     </td>
                   </tr>
                 )}
@@ -372,8 +384,8 @@ function POSPage() {
         {/* Quick Add Catalog Grid */}
         <div className="card-surface p-3">
           <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-2 tracking-wider flex justify-between">
-            <span>Quick Add Products (Shop Stock Billable Only)</span>
-            <span className="text-amber-400 font-mono">* Godown Stock requires Transfer before Billing</span>
+            <span>{t("pos.quickAdd")}</span>
+            <span className="text-amber-400 font-mono">{t("pos.godownNote")}</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {products.data?.map((p) => {
@@ -395,16 +407,21 @@ function POSPage() {
                     <span className="truncate">{p.name}</span>
                     {isShopOutOfStock && godownQty > 0 ? (
                       <span className="text-[9px] px-1 bg-amber-500/20 text-amber-400 font-bold rounded border border-amber-500/40">
-                        Transfer Req
+                        {t("pos.transferReq")}
                       </span>
                     ) : null}
                   </div>
                   <div className="text-[10px] font-mono text-muted-foreground flex justify-between items-center mt-1">
                     <span className={isShopOutOfStock ? "text-amber-400 font-bold" : "text-foreground"}>
-                      Shop: {qty(shopQty)}
+                      {t("pos.shop")}: {qty(shopQty)}
                     </span>
-                    <span className="text-muted-foreground">Godown: {qty(godownQty)}</span>
-                    <span className="text-primary font-bold">{inr(p.selling_price)}</span>
+                    <span className="text-muted-foreground">{t("pos.godown")}: {qty(godownQty)}</span>
+                    <div className="flex items-center gap-1.5">
+                      {p.mrp && p.mrp > p.selling_price ? (
+                        <span className="text-[10px] text-muted-foreground line-through">₹{Number(p.mrp).toFixed(0)}</span>
+                      ) : null}
+                      <span className="text-primary font-bold">{inr(p.selling_price)}</span>
+                    </div>
                   </div>
                 </button>
               );
@@ -418,7 +435,7 @@ function POSPage() {
         {/* Customer Selector Card */}
         <div className="card-surface p-4 space-y-3">
           <div className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-            <UserPlus className="h-4 w-4 text-primary" /> Customer Account Selection
+            <UserPlus className="h-4 w-4 text-primary" /> {t("pos.customer.title")}
           </div>
 
           <div className="flex gap-2">
@@ -432,7 +449,7 @@ function POSPage() {
                 }
               }}
               onBlur={(e) => lookupCustomer(e.target.value)}
-              placeholder="Customer Mobile (10 digits)"
+              placeholder={t("pos.customer.mobile")}
               className="flex-1 h-9 px-3 rounded bg-input border border-border text-xs font-mono focus:border-primary text-foreground"
             />
           </div>
@@ -440,19 +457,19 @@ function POSPage() {
           <input
             value={cart.customerName}
             onChange={(e) => cart.setCustomer({ id: cart.customerId, mobile: cart.customerMobile, name: e.target.value, loyalty: cart.loyaltyAvailable })}
-            placeholder="Customer Name (Walk-in Customer)"
+            placeholder={t("pos.customer.name")}
             className="w-full h-9 px-3 rounded bg-input border border-border text-xs font-mono text-foreground"
           />
 
           {cart.loyaltyAvailable > 0 && (
             <div className="p-2.5 bg-primary/10 border border-primary/30 rounded flex justify-between items-center text-xs">
-              <span className="font-semibold text-primary">Loyalty Points Available: {cart.loyaltyAvailable}</span>
+              <span className="font-semibold text-primary">{t("pos.loyalty.available")} {cart.loyaltyAvailable}</span>
               <button
                 type="button"
                 onClick={() => cart.setLoyaltyRedeem(Math.min(cart.loyaltyAvailable, totals.subtotal))}
                 className="px-2 py-1 bg-primary text-primary-foreground rounded text-[10px] font-bold hover:opacity-90 transition"
               >
-                Redeem
+                {t("pos.loyalty.redeem")}
               </button>
             </div>
           )}
@@ -462,9 +479,9 @@ function POSPage() {
         <div className="card-surface p-4 flex items-center justify-between">
           <div className="space-y-0.5">
             <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-              <Percent className="h-4 w-4 text-emerald-400" /> GST Invoice Mode
+              <Percent className="h-4 w-4 text-emerald-400" /> {t("pos.gst.title")}
             </div>
-            <div className="text-[10px] text-muted-foreground">Includes SGST & CGST Breakdown</div>
+            <div className="text-[10px] text-muted-foreground">{t("pos.gst.desc")}</div>
           </div>
           <button
             onClick={() => cart.toggleGst(!cart.gstEnabled)}
@@ -472,7 +489,7 @@ function POSPage() {
               cart.gstEnabled ? "bg-emerald-500 text-white border-emerald-400" : "bg-muted text-muted-foreground border-border"
             }`}
           >
-            {cart.gstEnabled ? "GST Invoice ON" : "NON-GST Invoice"}
+            {cart.gstEnabled ? t("pos.gst.on") : t("pos.gst.off")}
           </button>
         </div>
 
@@ -480,29 +497,29 @@ function POSPage() {
         <div className="card-surface p-4 flex-1 space-y-3 flex flex-col justify-between">
           <div className="space-y-2">
             <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground pb-2 border-b border-border">
-              Sale Financial Breakdown
+              {t("pos.breakdown.title")}
             </div>
 
             <div className="flex justify-between text-xs font-mono">
-              <span className="text-muted-foreground">Subtotal Items:</span>
+              <span className="text-muted-foreground">{t("pos.breakdown.subtotal")}</span>
               <span className="font-semibold text-foreground">{inr(totals.subtotal)}</span>
             </div>
 
             {cart.gstEnabled && (
               <>
                 <div className="flex justify-between text-xs font-mono text-emerald-400">
-                  <span>CGST (Output Tax):</span>
+                  <span>{t("pos.breakdown.cgst")}</span>
                   <span>{inr(totals.gstAmount / 2)}</span>
                 </div>
                 <div className="flex justify-between text-xs font-mono text-emerald-400">
-                  <span>SGST (Output Tax):</span>
+                  <span>{t("pos.breakdown.sgst")}</span>
                   <span>{inr(totals.gstAmount / 2)}</span>
                 </div>
               </>
             )}
 
             <div className="flex justify-between items-center text-xs font-mono pt-1">
-              <span className="text-muted-foreground">Bill Discount (₹):</span>
+              <span className="text-muted-foreground">{t("pos.breakdown.billDiscount")}</span>
               <input
                 type="number"
                 value={cart.invoiceDiscount || ""}
@@ -514,7 +531,7 @@ function POSPage() {
 
             {cart.loyaltyRedeem > 0 && (
               <div className="flex justify-between text-xs font-mono text-primary">
-                <span>Loyalty Discount:</span>
+                <span>{t("pos.breakdown.loyaltyDiscount")}</span>
                 <span>-{inr(cart.loyaltyRedeem)}</span>
               </div>
             )}
@@ -522,7 +539,7 @@ function POSPage() {
             {/* Exchange Section */}
             <div className="border-t border-dashed border-border/60 my-2 pt-2 space-y-1.5">
               <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-amber-500 font-bold">Exchange Value (₹):</span>
+                <span className="text-amber-500 font-bold">{t("pos.exchange.value")}</span>
                 <input
                   type="number"
                   value={cart.exchangeAmount || ""}
@@ -532,12 +549,12 @@ function POSPage() {
                 />
               </div>
               <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-muted-foreground">Exchange Notes:</span>
+                <span className="text-muted-foreground">{t("pos.exchange.notes")}</span>
                 <input
                   type="text"
                   value={cart.exchangeNotes}
                   onChange={(e) => cart.setExchange(cart.exchangeAmount, e.target.value)}
-                  placeholder="e.g. Old Cooker"
+                  placeholder={t("pos.exchange.placeholder")}
                   className="w-36 h-7 rounded bg-input border border-border text-right px-2 text-foreground text-[10px]"
                 />
               </div>
@@ -545,13 +562,20 @@ function POSPage() {
 
             {cart.exchangeAmount > 0 && (
               <div className="flex justify-between text-xs font-mono text-amber-500 font-semibold">
-                <span>Exchange ({cart.exchangeNotes || "Old Item"}):</span>
+                <span>{t("pos.exchange.oldItem")} ({cart.exchangeNotes || t("pos.exchange.placeholder")}):</span>
                 <span>-{inr(cart.exchangeAmount)}</span>
               </div>
             )}
 
+            {totals.totalSavings > 0 && (
+              <div className="flex justify-between items-center py-1.5 px-2.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold font-mono my-1">
+                <span className="flex items-center gap-1.5">🌟 Total Saved:</span>
+                <span className="text-sm">-{inr(totals.totalSavings)}</span>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-border flex justify-between items-center">
-              <span className="text-sm font-bold text-foreground">Grand Total:</span>
+              <span className="text-sm font-bold text-foreground">{t("pos.grandTotal")}</span>
               <span className="text-2xl font-black font-mono text-primary">{inr(totals.total)}</span>
             </div>
           </div>
@@ -560,9 +584,9 @@ function POSPage() {
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <Printer className="h-3 w-3" />
-              Print Destination
+              {t("pos.printDest")}
               {printersQuery.isFetching && (
-                <span className="text-[9px] text-primary animate-pulse">detecting...</span>
+                <span className="text-[9px] text-primary animate-pulse">{t("pos.detecting")}</span>
               )}
             </label>
             <div className="relative">
@@ -572,9 +596,9 @@ function POSPage() {
                 className="w-full h-9 rounded bg-input border border-border px-3 pr-8 text-xs font-mono font-semibold text-foreground appearance-none cursor-pointer"
               >
                 {/* Thermal receipt option default */}
-                <option value="thermal">🖨️ Thermal Printer (80mm receipt)</option>
+                <option value="thermal">🖨️ {t("pos.thermalPrinter")}</option>
                 {/* Save as PDF */}
-                <option value="__pdf__">📄 A4 Paper / Save as PDF</option>
+                <option value="__pdf__">📄 {t("pos.a4Paper")}</option>
                 {/* Divider */}
                 {systemPrinters.length > 0 && (
                   <option disabled value="">── Connected System Printers ──</option>
@@ -586,11 +610,6 @@ function POSPage() {
               </select>
               <ChevronDown className="h-3.5 w-3.5 absolute right-2.5 top-2.5 text-muted-foreground pointer-events-none" />
             </div>
-            <div className="text-[9px] text-muted-foreground">
-              {selectedPrinter === "__pdf__"
-                ? "Will open A4 invoice → browser print dialog → Save as PDF"
-                : `Will open 80mm receipt → browser sends to “${selectedPrinter === 'thermal' ? 'Thermal Printer' : selectedPrinter}”`}
-            </div>
           </div>
 
           {/* Hold & Recall Actions */}
@@ -601,14 +620,14 @@ function POSPage() {
               onClick={handleHoldBill}
               className="h-9 rounded-lg bg-secondary hover:bg-muted border border-border text-foreground text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RotateCcw className="h-3.5 w-3.5 rotate-180 text-amber-400" /> Hold Bill
+              <RotateCcw className="h-3.5 w-3.5 rotate-180 text-amber-400" /> {t("pos.holdBill")}
             </button>
             <button
               type="button"
               onClick={() => setShowHeldBillsModal(true)}
               className="h-9 rounded-lg bg-secondary hover:bg-muted border border-border text-foreground text-xs font-bold transition flex items-center justify-center gap-1.5 relative"
             >
-              <Bookmark className="h-3.5 w-3.5 text-primary" /> Recall ({heldBills.length})
+              <Bookmark className="h-3.5 w-3.5 text-primary" /> {t("pos.recall")} ({heldBills.length})
             </button>
           </div>
 
@@ -619,7 +638,7 @@ function POSPage() {
             className="w-full h-12 rounded-lg bg-primary text-primary-foreground font-black text-sm uppercase tracking-wider hover:opacity-90 transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Printer className="h-5 w-5" />
-            {savePrint.isPending ? "Saving Invoice..." : "Save & Print Receipt"}
+            {savePrint.isPending ? t("pos.saving") : t("pos.savePrint")}
           </button>
         </div>
       </div>
@@ -648,7 +667,7 @@ function POSPage() {
           >
             <div className="flex justify-between items-center border-b border-border pb-2">
               <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-                <Bookmark className="h-4 w-4 text-primary" /> Held Bills / Draft Carts
+                <Bookmark className="h-4 w-4 text-primary" /> {t("pos.heldBills.title")}
               </h3>
               <button
                 onClick={() => setShowHeldBillsModal(false)}
@@ -661,7 +680,7 @@ function POSPage() {
             <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
               {heldBills.length === 0 ? (
                 <div className="text-center py-8 text-xs text-muted-foreground italic">
-                  No bills currently on hold.
+                  {t("pos.heldBills.empty")}
                 </div>
               ) : (
                 heldBills.map((b) => {
@@ -678,7 +697,7 @@ function POSPage() {
                           {b.customerName} {b.customerMobile ? `(${b.customerMobile})` : ""}
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5 font-mono">
-                          Held: {date} • {itemsCount} items • Total: ₹{total.toFixed(2)}
+                          {t("pos.heldBills.held")} {date} • {itemsCount} {t("pos.heldBills.items")} • {t("pos.heldBills.total")} ₹{total.toFixed(2)}
                         </div>
                       </div>
                       <div className="flex gap-1.5 shrink-0">
@@ -686,13 +705,13 @@ function POSPage() {
                           onClick={() => handleDeleteHeldBill(b.id)}
                           className="h-7 px-2.5 rounded bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 font-bold transition text-[10px] uppercase"
                         >
-                          Delete
+                          {t("pos.heldBills.delete")}
                         </button>
                         <button
                           onClick={() => handleResumeBill(b)}
                           className="h-7 px-3 rounded bg-primary text-primary-foreground font-bold hover:opacity-90 transition text-[10px] uppercase"
                         >
-                          Resume
+                          {t("pos.heldBills.resume")}
                         </button>
                       </div>
                     </div>

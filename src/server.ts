@@ -48,6 +48,15 @@ export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
     if (url.pathname === "/api/db") {
+      if (request.method === "HEAD") {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store, max-age=0, must-revalidate",
+          },
+        });
+      }
       if (request.method === "GET") {
         try {
           const { SQLiteDatabaseManager } = await import("./lib/db/sqlite-server-db");
@@ -91,6 +100,11 @@ export default {
             await SQLiteDatabaseManager.deleteRow(table, id);
           } else if (action === "reset") {
             await SQLiteDatabaseManager.clearAllTables();
+          } else if (action === "clear_transactions") {
+            await SQLiteDatabaseManager.clearTransactionsOnly();
+          } else if (action === "factory_reset") {
+            const { options } = body;
+            await SQLiteDatabaseManager.factoryResetStore(options);
           }
 
           return new Response(JSON.stringify({ success: true }), {
@@ -107,7 +121,14 @@ export default {
     }
 
     // /api/printers — returns list of real installed printers from the OS
-    if (url.pathname === "/api/printers" && request.method === "GET") {
+    if (url.pathname === "/api/printers") {
+      if (request.method === "HEAD") {
+        return new Response(null, {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      }
+      if (request.method === "GET") {
       try {
         const { execSync } = await import("child_process") as any;
         let printers: string[] = [];
@@ -149,6 +170,7 @@ export default {
         });
       }
     }
+  }
 
     try {
       const handler = await getServerEntry();

@@ -2,11 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, InventoryItem } from "@/lib/db/db";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2, Calculator } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2, Calculator, Tag } from "lucide-react";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
 
@@ -25,17 +26,25 @@ const UNIT_OPTIONS = [
 ];
 
 function InventoryPage() {
+  const t = useT();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [locationFilter, setLocationFilter] = useState<"ALL" | "SHOP" | "GODOWN" | "LOW_STOCK">("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [edit, setEdit] = useState<InventoryItem | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [printLabelProduct, setPrintLabelProduct] = useState<InventoryItem | null>(null);
   const [pnlDetailProduct, setPnlDetailProduct] = useState<InventoryItem | null>(null);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [q, locationFilter]);
+
   const products = useQuery({
     queryKey: ["local-inventory-products", q, locationFilter],
+    staleTime: 60_000,
     queryFn: async () => {
       const all = db.getInventory();
       return all.filter((p) => {
@@ -60,11 +69,34 @@ function InventoryPage() {
 
   const invoicesData = useQuery({
     queryKey: ["local-invoices-for-pnl"],
+    staleTime: 60_000,
     queryFn: async () => db.getInvoices(),
   });
 
-  // Calculate Overall Inventory Metrics
+  // Pre-calculate sales metrics for all products in O(M) time once per invoice query update
+  const productSalesMap = useMemo(() => {
+    const map = new Map<string, { unitsSold: number; totalRevenue: number }>();
+    if (!invoicesData.data) return map;
+    for (const inv of invoicesData.data) {
+      if (!inv.items) continue;
+      for (const it of inv.items) {
+        if (!it.product_id) continue;
+        const existing = map.get(it.product_id) || { unitsSold: 0, totalRevenue: 0 };
+        existing.unitsSold += Number(it.qty || 0);
+        existing.totalRevenue += Number(it.total_price || 0);
+        map.set(it.product_id, existing);
+      }
+    }
+    return map;
+  }, [invoicesData.data]);
+
   const allProds = products.data || [];
+  const totalProductsCount = allProds.length;
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(totalProductsCount / pageSize) || 1;
+  const activePage = Math.min(currentPage, totalPages);
+  const displayedProducts = pageSize === -1 ? allProds : allProds.slice((activePage - 1) * pageSize, activePage * pageSize);
+
+  // Calculate Overall Inventory Metrics
   let totalShopAsset = 0;
   let totalGodownAsset = 0;
   let totalPotentialProfit = 0;
@@ -103,6 +135,7 @@ function InventoryPage() {
         Category: p.category,
         Unit: p.unit || 'Piece (Pcs)',
         'Cost Price (₹)': p.cost_price,
+        'MRP (₹)': p.mrp || p.selling_price,
         'Selling Price (₹)': p.selling_price,
         'Unit Profit/Loss (₹)': unitPnl,
         'Margin (%)': Math.round(margin),
@@ -125,33 +158,33 @@ function InventoryPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Inventory & Stock Catalog"
-        subtitle={`${products.data?.length ?? 0} active products in local database with per-product P&L tracking`}
+        title={t("inventory.title")}
+        subtitle={`${products.data?.length ?? 0} ${t("inventory.subtitle")}`}
         action={
           <div className="flex gap-2">
             <button
               onClick={() => ExcelEngine.downloadTemplate('products')}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition text-foreground"
             >
-              <Download className="h-3.5 w-3.5" /> Template
+              <Download className="h-3.5 w-3.5" /> {t("inventory.template")}
             </button>
             <button
               onClick={() => setShowImportModal(true)}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition text-emerald-400"
             >
-              <Upload className="h-3.5 w-3.5" /> Import Excel
+              <Upload className="h-3.5 w-3.5" /> {t("inventory.importExcel")}
             </button>
             <button
               onClick={exportCatalog}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition text-foreground"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> Export Excel
+              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> {t("inventory.exportExcel")}
             </button>
             <button
               onClick={() => setShowNew(true)}
               className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:accent-glow transition"
             >
-              <Plus className="h-4 w-4" /> Add Product
+              <Plus className="h-4 w-4" /> {t("inventory.addProduct")}
             </button>
           </div>
         }
@@ -162,31 +195,31 @@ function InventoryPage() {
         <div className="card-surface p-3 border-l-4 border-l-primary flex items-center justify-between">
           <div>
             <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-              <Store className="h-3.5 w-3.5 text-primary" /> Shop Stock Valuation
+              <Store className="h-3.5 w-3.5 text-primary" /> {t("inventory.kpi.shopValuation")}
             </div>
             <div className="text-base font-bold font-mono text-foreground mt-0.5">{inr(totalShopAsset)}</div>
           </div>
-          <div className="text-[10px] font-mono text-muted-foreground">Billable Items</div>
+          <div className="text-[10px] font-mono text-muted-foreground">{t("inventory.kpi.billable")}</div>
         </div>
 
         <div className="card-surface p-3 border-l-4 border-l-blue-500 flex items-center justify-between">
           <div>
             <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-              <Warehouse className="h-3.5 w-3.5 text-blue-400" /> Godown Stock Valuation
+              <Warehouse className="h-3.5 w-3.5 text-blue-400" /> {t("inventory.kpi.godownValuation")}
             </div>
             <div className="text-base font-bold font-mono text-foreground mt-0.5">{inr(totalGodownAsset)}</div>
           </div>
-          <div className="text-[10px] font-mono text-amber-400 font-semibold">Requires Transfer</div>
+          <div className="text-[10px] font-mono text-amber-400 font-semibold">{t("inventory.kpi.reqTransfer")}</div>
         </div>
 
         <div className="card-surface p-3 border-l-4 border-l-emerald-500 flex items-center justify-between">
           <div>
             <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> Projected Catalog Profit
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> {t("inventory.kpi.profit")}
             </div>
             <div className="text-base font-bold font-mono text-emerald-400 mt-0.5">+{inr(totalPotentialProfit)}</div>
           </div>
-          <div className="text-[10px] font-mono text-emerald-400">Total Inventory Margin</div>
+          <div className="text-[10px] font-mono text-emerald-400">{t("inventory.kpi.margin")}</div>
         </div>
       </div>
 
@@ -195,7 +228,7 @@ function InventoryPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by product name, barcode, SKU, or category…"
+            placeholder={t("inventory.search")}
             className="w-full sm:flex-1 h-9 px-3 rounded-md bg-input border border-border text-sm font-mono text-foreground"
           />
 
@@ -204,25 +237,25 @@ function InventoryPage() {
               onClick={() => setLocationFilter("ALL")}
               className={`h-8 px-2.5 rounded border transition ${locationFilter === "ALL" ? "bg-primary text-primary-foreground border-primary font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
             >
-              All Products
+              {t("inventory.filter.all")}
             </button>
             <button
               onClick={() => setLocationFilter("SHOP")}
               className={`h-8 px-2.5 rounded border transition ${locationFilter === "SHOP" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
             >
-              In Shop
+              {t("inventory.filter.inShop")}
             </button>
             <button
               onClick={() => setLocationFilter("GODOWN")}
               className={`h-8 px-2.5 rounded border transition ${locationFilter === "GODOWN" ? "bg-blue-500/20 text-blue-400 border-blue-500/40 font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
             >
-              In Godown
+              {t("inventory.filter.inGodown")}
             </button>
             <button
               onClick={() => setLocationFilter("LOW_STOCK")}
               className={`h-8 px-2.5 rounded border transition ${locationFilter === "LOW_STOCK" ? "bg-amber-500/20 text-amber-400 border-amber-500/40 font-bold" : "bg-secondary text-muted-foreground border-border hover:text-foreground"}`}
             >
-              Low Stock
+              {t("inventory.filter.low")}
             </button>
           </div>
         </div>
@@ -232,20 +265,20 @@ function InventoryPage() {
           <table className="w-full text-xs">
             <thead className="text-[10px] uppercase text-muted-foreground tracking-tight bg-card border-b border-border">
               <tr>
-                <th className="text-left px-2.5 py-2.5">Product Name</th>
-                <th className="text-left px-2 py-2.5">Barcode / SKU</th>
-                <th className="text-left px-2 py-2.5">Category</th>
-                <th className="text-right px-2 py-2.5">Cost (CP)</th>
-                <th className="text-right px-2 py-2.5">Selling (SP)</th>
-                <th className="text-right px-2 py-2.5 font-bold text-blue-400">Investment Recovery P&L</th>
-                <th className="text-right px-2 py-2.5">Shop Stock</th>
-                <th className="text-right px-2 py-2.5">Godown Stock</th>
-                <th className="text-right px-2 py-2.5">Total Stock</th>
-                <th className="text-right px-2.5 py-2.5">Actions</th>
+                <th className="text-left px-2.5 py-2.5">{t("inventory.col.product")}</th>
+                <th className="text-left px-2 py-2.5">{t("inventory.col.barcode")}</th>
+                <th className="text-left px-2 py-2.5">{t("inventory.col.category")}</th>
+                <th className="text-right px-2 py-2.5">{t("inventory.col.costPrice")}</th>
+                <th className="text-right px-2 py-2.5">{t("inventory.col.sellPrice")}</th>
+                <th className="text-right px-2 py-2.5 font-bold text-blue-400">{t("inventory.col.profitMargin")}</th>
+                <th className="text-right px-2 py-2.5">{t("inventory.col.shopStock")}</th>
+                <th className="text-right px-2 py-2.5">{t("inventory.col.godownStock")}</th>
+                <th className="text-right px-2 py-2.5">{t("common.total")}</th>
+                <th className="text-right px-2.5 py-2.5">{t("inventory.col.actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {products.data?.map((p) => {
+              {displayedProducts.map((p) => {
                 const shopQty = Number(p.stock_qty || 0);
                 const godownQty = Number(p.godown_qty || 0);
                 const totalStock = shopQty + godownQty;
@@ -254,17 +287,10 @@ function InventoryPage() {
                 const marginPct = p.selling_price > 0 ? (unitPnl / p.selling_price) * 100 : 0;
                 const unitLabel = p.unit ? p.unit.split(' ')[0] : 'Pcs';
 
-                // Calculate current realized sales and profit for this product
-                let unitsSold = 0;
-                let totalRevenue = 0;
-                invoicesData.data?.forEach((inv) => {
-                  inv.items?.forEach((it: any) => {
-                    if (it.product_id === p.id) {
-                      unitsSold += Number(it.qty || 0);
-                      totalRevenue += Number(it.total_price || 0);
-                    }
-                  });
-                });
+                // O(1) hash map lookup instead of 165 Million nested loop iterations
+                const sales = productSalesMap.get(p.id) || { unitsSold: 0, totalRevenue: 0 };
+                const unitsSold = sales.unitsSold;
+                const totalRevenue = sales.totalRevenue;
                 const totalCogs = unitsSold * p.cost_price;
                 const netRealizedProfit = totalRevenue - totalCogs;
                 
@@ -295,6 +321,11 @@ function InventoryPage() {
                     <td className="px-2 py-2 text-right font-mono text-muted-foreground">{inr(p.cost_price)}</td>
                     <td className="px-2 py-2 text-right font-mono">
                       <div className="font-semibold text-primary">{inr(p.selling_price)}</div>
+                      {p.mrp && p.mrp > 0 && p.mrp > p.selling_price ? (
+                        <div className="text-[10px] text-muted-foreground/80 line-through">
+                          MRP: {inr(p.mrp)}
+                        </div>
+                      ) : null}
                       <div className="text-[10px] text-muted-foreground">
                         {marginPct.toFixed(0)}% margin
                       </div>
@@ -385,6 +416,75 @@ function InventoryPage() {
             </tbody>
           </table>
         </div>
+
+        {/* High Performance Pagination Controls */}
+        {totalProductsCount > 0 && (
+          <div className="p-3 border-t border-border bg-card/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-muted-foreground font-mono text-[11px]">
+              Showing <span className="font-bold text-foreground">{(activePage - 1) * (pageSize === -1 ? totalProductsCount : pageSize) + 1}</span> to{" "}
+              <span className="font-bold text-foreground">{Math.min(activePage * (pageSize === -1 ? totalProductsCount : pageSize), totalProductsCount)}</span> of{" "}
+              <span className="font-bold text-foreground">{totalProductsCount}</span> products
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground text-[11px]">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 px-2 rounded bg-input border border-border text-xs font-mono font-semibold text-foreground cursor-pointer"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={-1}>All ({totalProductsCount})</option>
+                </select>
+              </div>
+
+              {pageSize !== -1 && totalPages > 1 && (
+                <div className="flex items-center gap-1 font-mono">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={activePage === 1}
+                    className="h-8 px-2 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    «
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                    disabled={activePage === 1}
+                    className="h-8 px-2.5 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    ‹ Prev
+                  </button>
+
+                  <span className="px-2.5 py-1 text-xs font-bold text-primary bg-primary/10 rounded border border-primary/20">
+                    {activePage} / {totalPages}
+                  </span>
+
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                    disabled={activePage >= totalPages}
+                    className="h-8 px-2.5 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    Next ›
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={activePage >= totalPages}
+                    className="h-8 px-2 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    »
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {(showNew || edit) && (
@@ -635,6 +735,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
     unit: product?.unit ?? "Piece (Pcs)",
     cost_price: product?.cost_price,
     selling_price: product?.selling_price,
+    mrp: product?.mrp,
     stock_qty: product?.stock_qty,
     godown_qty: product?.godown_qty,
     moq: product?.moq,
@@ -647,6 +748,8 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
   const shopQtyNum = Number(f.stock_qty || 0);
   const godownQtyNum = Number(f.godown_qty || 0);
   const totalStockNum = shopQtyNum + godownQtyNum;
+
+  const unitShort = f.unit ? (f.unit.match(/\((.*?)\)/)?.[1] || f.unit) : "Pcs";
 
   const cpNum = Number(f.cost_price || 0);
   const spNum = Number(f.selling_price || 0);
@@ -725,6 +828,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
       unit: f.unit || "Piece (Pcs)",
       cost_price: f.cost_price ?? 0,
       selling_price: f.selling_price ?? 0,
+      mrp: f.mrp !== undefined && f.mrp !== null && !isNaN(Number(f.mrp)) ? Number(f.mrp) : 0,
       stock_qty: f.stock_qty ?? 0,
       godown_qty: f.godown_qty ?? 0,
       moq: f.moq ?? 5,
@@ -847,14 +951,14 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
           {/* Stock Allocation & Quantities Section */}
           <div className="p-3 bg-card rounded border border-border space-y-2">
             <div className="text-xs font-bold text-foreground flex items-center justify-between">
-              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Allocation & Quantities ({f.unit || 'Pcs'})</span>
-              <span className="text-xs font-mono font-bold text-blue-400">Total Stock: {qty(totalStockNum)} {f.unit || 'Pcs'}</span>
+              <span className="flex items-center gap-1.5"><Store className="h-3.5 w-3.5 text-primary" /> Stock Allocation & Quantities ({unitShort})</span>
+              <span className="text-xs font-mono font-bold text-blue-400">Total Stock: {qty(totalStockNum)} {unitShort}</span>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty ({f.unit || 'Pcs'})</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Shop Stock Qty ({unitShort})</div>
                   <input
                     type="number"
                     step="0.01"
@@ -864,7 +968,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                       setF({ ...f, stock_qty: sq });
                       handleStockQtyChange(sq, godownQtyNum);
                     }}
-                    placeholder="e.g. 28 (Pcs or Kg)"
+                    placeholder={`e.g. 28 (${unitShort})`}
                     className={ic}
                   />
                 </label>
@@ -872,7 +976,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty ({f.unit || 'Pcs'})</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Godown Stock Qty ({unitShort})</div>
                   <input
                     type="number"
                     step="0.01"
@@ -882,7 +986,7 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                       setF({ ...f, godown_qty: gq });
                       handleStockQtyChange(shopQtyNum, gq);
                     }}
-                    placeholder="e.g. 0 (Pcs or Kg)"
+                    placeholder={`e.g. 0 (${unitShort})`}
                     className={ic}
                   />
                 </label>
@@ -891,17 +995,20 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
           </div>
 
           {/* Unit & Total Pricing Matrix (Bi-directional Auto Sync) */}
-          <div className="p-3 bg-card rounded border border-border space-y-2">
+          <div className="p-3 bg-card rounded border border-border space-y-2.5">
             <div className="text-xs font-bold text-foreground flex items-center justify-between">
               <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5 text-emerald-400" /> Unit & Total Stock Pricing (Bi-directional Sync)</span>
               <span className="text-xs font-mono text-emerald-400">Total Cost: {inr(totalStockNum * cpNum)}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              {/* Cost Inputs */}
+            {/* Row 1: Unit Pricing (3 columns: Cost, MRP, Selling) */}
+            <div className="grid grid-cols-3 gap-3">
+              {/* Cost Input */}
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Cost Price per {f.unit || 'Unit'} (₹)</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 min-h-[26px] flex flex-col justify-end">
+                    <span>Cost Price / {unitShort} (₹)</span>
+                  </div>
                   <input
                     type="number"
                     step="0.01"
@@ -913,24 +1020,30 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                 </label>
               </div>
 
+              {/* MRP Input */}
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total Stock Cost Amount (₹)</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 min-h-[26px] flex items-end justify-between">
+                    <span>MRP (₹)</span>
+                    <span className="text-[9px] text-muted-foreground font-normal">Max Retail</span>
+                  </div>
                   <input
                     type="number"
                     step="0.01"
-                    value={totalCostAmount}
-                    onChange={(e) => handleTotalCostAmountChange(e.target.value)}
-                    placeholder="e.g. 2900 (Auto-syncs Cost/Unit)"
+                    value={f.mrp ?? ""}
+                    onChange={(e) => setF({ ...f, mrp: e.target.value === "" ? undefined : parseFloat(e.target.value) })}
+                    placeholder="0.00"
                     className={ic}
                   />
                 </label>
               </div>
 
-              {/* Selling Inputs */}
+              {/* Selling Input */}
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Selling Price per {f.unit || 'Unit'} (₹) *</div>
+                  <div className="text-[10px] uppercase font-bold text-primary mb-1 min-h-[26px] flex flex-col justify-end">
+                    <span>Selling Price / {unitShort} (₹) *</span>
+                  </div>
                   <input
                     required
                     type="number"
@@ -938,6 +1051,25 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
                     value={f.selling_price ?? ""}
                     onChange={(e) => handleSellingPriceChange(e.target.value)}
                     placeholder="0.00"
+                    className={`${ic} border-primary/50 font-bold`}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Row 2: Total Stock Amounts (2 equal balanced columns) */}
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/40">
+              <div>
+                <label className="block">
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 min-h-[18px] flex items-end">
+                    <span>Total Stock Cost Amount (₹)</span>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={totalCostAmount}
+                    onChange={(e) => handleTotalCostAmountChange(e.target.value)}
+                    placeholder="e.g. 2900"
                     className={ic}
                   />
                 </label>
@@ -945,13 +1077,15 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
 
               <div>
                 <label className="block">
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total Stock Selling Amount (₹)</div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 min-h-[18px] flex items-end">
+                    <span>Total Stock Selling Amount (₹)</span>
+                  </div>
                   <input
                     type="number"
                     step="0.01"
                     value={totalSellingAmount}
                     onChange={(e) => handleTotalSellingAmountChange(e.target.value)}
-                    placeholder="e.g. 3480 (Auto-syncs Selling/Unit)"
+                    placeholder="e.g. 3480"
                     className={ic}
                   />
                 </label>
@@ -1044,6 +1178,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
   }
 
   const barcodeCode = product.barcode || product.sku_code || generatePmaBarcode();
+  const mrpVal = product.mrp && product.mrp > 0 ? product.mrp : product.selling_price;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
@@ -1059,7 +1194,12 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
         <div className="p-4 bg-white text-black rounded border border-gray-300 shadow-md text-center space-y-1 print:border-0 print:p-2 print:shadow-none font-sans">
           <div className="text-[10px] font-bold uppercase tracking-wider text-gray-700">Ponmani Agencies</div>
           <div className="text-sm font-black truncate leading-tight text-gray-900">{product.name}</div>
-          <div className="text-lg font-extrabold text-black font-mono">₹ {product.selling_price.toFixed(2)}</div>
+          
+          {/* MRP & Selling Price */}
+          <div className="flex items-center justify-center gap-3 font-mono py-0.5">
+            <span className="text-xs text-gray-600 font-semibold">MRP: ₹ {mrpVal.toFixed(2)}</span>
+            <span className="text-base font-extrabold text-black">SP: ₹ {product.selling_price.toFixed(2)}</span>
+          </div>
 
           {/* Visual Barcode SVG */}
           <div className="py-1 flex justify-center">
@@ -1129,6 +1269,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
         category: r['Category'] || r['category'] || 'General',
         unit: r['Unit'] || r['unit'] || 'Piece (Pcs)',
         cost_price: Number(r['Cost Price'] || r['cost_price']) || 0,
+        mrp: Number(r['MRP'] || r['mrp'] || r['Max Retail Price']) || undefined,
         selling_price: Number(r['Selling Price'] || r['selling_price']) || 0,
         stock_qty: Number(r['Stock Qty'] || r['stock_qty']) || 0,
         godown_qty: Number(r['Godown Qty'] || r['godown_qty']) || 0,
@@ -1206,6 +1347,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
                     <th className="px-2 py-1.5 text-left">Barcode</th>
                     <th className="px-2 py-1.5 text-left">Name</th>
                     <th className="px-2 py-1.5 text-right">Cost</th>
+                    <th className="px-2 py-1.5 text-right">MRP</th>
                     <th className="px-2 py-1.5 text-right">Selling Price</th>
                     <th className="px-2 py-1.5 text-right">Stock</th>
                   </tr>
@@ -1216,6 +1358,7 @@ function ExcelImportModal({ onClose, onImported }: { onClose: () => void; onImpo
                       <td className="px-2 py-1.5 font-mono text-muted-foreground">{r.barcode || 'Auto'}</td>
                       <td className="px-2 py-1.5 font-medium">{r.name}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{inr(r.cost_price)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">{inr(r.mrp || r.selling_price)}</td>
                       <td className="px-2 py-1.5 text-right font-mono font-bold text-primary">{inr(r.selling_price)}</td>
                       <td className="px-2 py-1.5 text-right font-mono">{r.stock_qty}</td>
                     </tr>

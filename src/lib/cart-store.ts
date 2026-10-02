@@ -5,6 +5,7 @@ export type CartLine = {
   name: string;
   barcode?: string | null;
   price: number;
+  mrp?: number;
   gst_rate: number;
   qty: number;
   discount: number; // per-line absolute discount in ₹
@@ -71,28 +72,38 @@ export const useCart = create<State & Actions>((set, get) => ({
   sidebarCollapsed: false,
   addOrIncrement: (line) =>
     set((s) => {
-      const existing = s.lines.find((l) => l.product_id === line.product_id);
-      if (existing) {
-        return {
-          lines: s.lines.map((l) =>
-            l.product_id === line.product_id ? { ...l, qty: l.qty + (line.qty ?? 1) } : l,
-          ),
-        };
+      const idx = s.lines.findIndex((l) => l.product_id === line.product_id);
+      if (idx >= 0) {
+        const copy = [...s.lines];
+        copy[idx] = { ...copy[idx], qty: copy[idx].qty + (line.qty ?? 1) };
+        return { lines: copy };
       }
       return { lines: [...s.lines, { ...line, qty: line.qty ?? 1, discount: 0 }] };
     }),
   setQty: (id, q) =>
-    set((s) => ({
-      lines: s.lines.map((l) => (l.product_id === id ? { ...l, qty: Math.max(0, q) } : l)),
-    })),
+    set((s) => {
+      const idx = s.lines.findIndex((l) => l.product_id === id);
+      if (idx < 0) return s;
+      const copy = [...s.lines];
+      copy[idx] = { ...copy[idx], qty: Math.max(0, q) };
+      return { lines: copy };
+    }),
   setLineDiscount: (id, d) =>
-    set((s) => ({
-      lines: s.lines.map((l) => (l.product_id === id ? { ...l, discount: Math.max(0, d) } : l)),
-    })),
+    set((s) => {
+      const idx = s.lines.findIndex((l) => l.product_id === id);
+      if (idx < 0) return s;
+      const copy = [...s.lines];
+      copy[idx] = { ...copy[idx], discount: Math.max(0, d) };
+      return { lines: copy };
+    }),
   setLineGstRate: (id, rate) =>
-    set((s) => ({
-      lines: s.lines.map((l) => (l.product_id === id ? { ...l, gst_rate: Math.max(0, rate) } : l)),
-    })),
+    set((s) => {
+      const idx = s.lines.findIndex((l) => l.product_id === id);
+      if (idx < 0) return s;
+      const copy = [...s.lines];
+      copy[idx] = { ...copy[idx], gst_rate: Math.max(0, rate) };
+      return { lines: copy };
+    }),
   remove: (id) => set((s) => ({ lines: s.lines.filter((l) => l.product_id !== id) })),
   clear: () =>
     set({
@@ -145,12 +156,16 @@ export const useCart = create<State & Actions>((set, get) => ({
 export function computeTotals(s: State) {
   let subtotal = 0;
   let gstAmount = 0;
+  let totalMrp = 0;
   for (const l of s.lines) {
     const gross = l.price * l.qty - l.discount;
     subtotal += gross;
+    const itemMrp = l.mrp && l.mrp > 0 ? l.mrp : l.price;
+    totalMrp += itemMrp * l.qty;
     if (s.gstEnabled) gstAmount += (gross * (l.gst_rate || 0)) / 100;
   }
   const afterInvDisc = Math.max(0, subtotal - s.invoiceDiscount - s.loyaltyRedeem - (s.exchangeAmount || 0));
   const total = afterInvDisc + gstAmount;
-  return { subtotal, gstAmount, total };
+  const totalSavings = Math.max(0, (totalMrp - subtotal) + (s.invoiceDiscount || 0) + (s.loyaltyRedeem || 0));
+  return { subtotal, gstAmount, total, totalMrp, totalSavings };
 }

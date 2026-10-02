@@ -4,7 +4,7 @@ import { db, User } from './db/db';
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
-  loginWithPin: (username: string, pin: string) => boolean;
+  loginWithPin: (username: string, pin: string) => User | null;
   logout: () => void;
   initializeAuth: () => void;
 }
@@ -17,9 +17,9 @@ export const useAuth = create<AuthState>((set) => ({
     const matchedUser = db.authenticate(username, pin);
     if (matchedUser) {
       set({ user: matchedUser, isAuthenticated: true });
-      return true;
+      return matchedUser;
     }
-    return false;
+    return null;
   },
 
   logout: () => {
@@ -33,3 +33,4 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 }));
+

@@ -15,7 +15,9 @@ import {
   LineChart,
   Settings,
   Search,
+  ClipboardList,
 } from "lucide-react";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/apps")({
   component: AppsPage,
@@ -101,6 +103,17 @@ export const INDIVIDUAL_APPS: SingleApp[] = [
     borderColor: "border-indigo-500/40",
   },
   {
+    id: "shopping-list",
+    name: "Shopping List",
+    category: "Stock",
+    desc: "Restock & Buying",
+    to: "/shopping-list",
+    icon: ClipboardList,
+    color: "text-rose-400",
+    bgColor: "from-rose-500/30 to-pink-600/15",
+    borderColor: "border-rose-500/40",
+  },
+  {
     id: "godown",
     name: "Godown",
     category: "Stock",
@@ -180,9 +193,16 @@ export const INDIVIDUAL_APPS: SingleApp[] = [
 ];
 
 function AppsPage() {
+  const t = useT();
   const [search, setSearch] = useState("");
 
-  const filteredApps = INDIVIDUAL_APPS.filter((app) =>
+  // Translate app names dynamically based on current language
+  const apps = INDIVIDUAL_APPS.map((app) => ({
+    ...app,
+    name: t(`apps.${app.id}`, app.name),
+  }));
+
+  const filteredApps = apps.filter((app) =>
     app.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -227,7 +247,7 @@ function AppsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search apps…"
+              placeholder={t("apps.searchPlaceholder")}
               className="w-full h-11 pl-10 pr-4 rounded-2xl bg-card/80 backdrop-blur-sm border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition shadow-xs"
             />
           </div>
@@ -261,12 +281,12 @@ function AppsPage() {
 
         {filteredApps.length === 0 && (
           <div className="text-center py-12 rounded-2xl border border-dashed border-border p-6 max-w-sm w-full">
-            <p className="text-sm text-muted-foreground">No apps found matching "{search}"</p>
+            <p className="text-sm text-muted-foreground">{t("apps.noResults")} "{search}"</p>
             <button
               onClick={() => setSearch("")}
               className="mt-3 text-xs font-semibold text-primary underline"
             >
-              Clear search filter
+              {t("apps.clearFilter")}
             </button>
           </div>
         )}

@@ -28,13 +28,27 @@ function generateWhatsAppText(i: Invoice, items: InvoiceItem[], storeSettings: a
   t += `-----------------------------\n`;
   t += `*ITEMS PURCHASED:*\n`;
 
+  let totalMrp = 0;
+  let totalSelling = 0;
+
   items.forEach((it: any, idx: number) => {
     const name = it.product_name || it.name || "Item #" + (idx + 1);
-    const qtyStr = `${it.qty} Pcs`;
-    const rateStr = Number(it.unit_price || it.price || 0).toFixed(2);
-    const amtStr = Number(it.total_price || it.qty * it.unit_price).toFixed(2);
-    t += `${idx + 1}. *${name}* — ${qtyStr} x ₹${rateStr} = *₹${amtStr}*\n`;
+    const itemQty = Number(it.qty || 1);
+    const qtyStr = `${itemQty} Pcs`;
+    const unitPrice = Number(it.unit_price || it.price || 0);
+    const rateStr = unitPrice.toFixed(2);
+    const amtStr = Number(it.total_price || itemQty * unitPrice).toFixed(2);
+
+    const prod = it.product_id ? db.getProductById(it.product_id) : (it.barcode ? db.getProductByBarcode(it.barcode) : null);
+    const itemMrp = Number(it.mrp && it.mrp > 0 ? it.mrp : (prod?.mrp && prod.mrp > 0 ? prod.mrp : (prod?.selling_price || unitPrice)));
+    totalMrp += itemMrp * itemQty;
+    totalSelling += unitPrice * itemQty;
+
+    const mrpInfo = itemMrp > unitPrice ? ` (MRP: ₹${itemMrp.toFixed(2)})` : "";
+    t += `${idx + 1}. *${name}* — ${qtyStr} x ₹${rateStr}${mrpInfo} = *₹${amtStr}*\n`;
   });
+
+  const totalSaved = Math.max(0, (totalMrp - totalSelling) + Number(i.discount_amount || 0));
 
   t += `-----------------------------\n`;
   t += `*Subtotal:* ₹${Number(i.subtotal).toFixed(2)}\n`;
@@ -43,6 +57,9 @@ function generateWhatsAppText(i: Invoice, items: InvoiceItem[], storeSettings: a
     t += `*Exchange (-):* ₹${Number(i.exchange_amount).toFixed(2)} (${i.exchange_notes || "Old Item"})\n`;
   }
   if (i.tax_amount > 0) t += `*Tax (GST):* ₹${Number(i.tax_amount).toFixed(2)}\n`;
+  if (totalSaved > 0) {
+    t += `*🎉 YOU SAVED: ₹${totalSaved.toFixed(2)} TODAY!* \n`;
+  }
   t += `*GRAND TOTAL: ₹${Number(i.grand_total).toFixed(2)}*\n`;
   t += `-----------------------------\n`;
   t += `_${storeSettings?.receipt_footer_note || "Thank you for shopping!"}_`;
@@ -281,7 +298,7 @@ export function BillViewerModal({
           </div>
 
           {/* Body Preview Content */}
-          <div className="p-4 sm:p-8 pb-16 sm:pb-20 overflow-y-auto overflow-x-auto flex-1 flex justify-center bg-zinc-900/50 w-full">
+          <div className="p-4 sm:p-8 pb-16 sm:pb-20 overflow-y-auto overflow-x-auto flex-1 flex justify-center bg-slate-100 w-full">
             {query.isLoading && !invoiceObj ? (
               <div className="py-12 text-center text-sm text-muted-foreground animate-pulse">
                 Loading bill data...

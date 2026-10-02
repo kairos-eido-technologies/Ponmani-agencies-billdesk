@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Invoice, InvoiceItem } from "@/lib/db/db";
+import { db, Invoice, InvoiceItem } from "@/lib/db/db";
 import { qty } from "@/lib/format";
 import { PonmaniLogo } from "./PonmaniLogo";
 
@@ -82,6 +82,22 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
   const taxAmount = Number(i.tax_amount || 0);
   const cgst = taxAmount / 2;
   const sgst = taxAmount / 2;
+
+  // Compute MRP & Savings
+  let totalMrp = 0;
+  let totalSelling = 0;
+  items.forEach((it: any) => {
+    const itemQty = Number(it.qty || 1);
+    const unitPrice = Number(it.unit_price || it.price || 0);
+    const prod = it.product_id ? db.getProductById(it.product_id) : (it.barcode ? db.getProductByBarcode(it.barcode) : null);
+    const itemMrp = Number(it.mrp && it.mrp > 0 ? it.mrp : (prod?.mrp && prod.mrp > 0 ? prod.mrp : (prod?.selling_price || unitPrice)));
+    totalMrp += itemMrp * itemQty;
+    totalSelling += unitPrice * itemQty;
+  });
+
+  const mrpSavings = Math.max(0, totalMrp - totalSelling);
+  const discountSavings = Number(i.discount_amount || 0);
+  const totalSaved = mrpSavings + discountSavings;
 
   const dateStr = new Date(i.created_at || Date.now()).toLocaleString("en-IN", {
     day: "2-digit",
@@ -168,10 +184,11 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
           <thead>
             <tr style={{ background: "#0f172a", color: "#ffffff" }}>
               <th style={{ padding: "8px 10px", textAlign: "left", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase" }}>Item Description</th>
-              <th style={{ padding: "8px 10px", textAlign: "center", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "65px" }}>Qty</th>
-              <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "110px" }}>Rate (₹)</th>
-              {isGst && <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "75px" }}>GST%</th>}
-              <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "120px" }}>Amount (₹)</th>
+              <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "90px" }}>MRP (₹)</th>
+              <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "90px" }}>Rate (₹)</th>
+              <th style={{ padding: "8px 10px", textAlign: "center", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "60px" }}>Qty</th>
+              {isGst && <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "65px" }}>GST%</th>}
+              <th style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", fontWeight: "bold", textTransform: "uppercase", width: "110px" }}>Amount (₹)</th>
             </tr>
           </thead>
           <tbody>
@@ -183,6 +200,10 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
                 const totalPrice = Number(it.total_price ?? (itemQty * unitPrice));
                 const taxRate = isGst ? Number(it.tax_rate || it.gst_rate || 0) : 0;
                 const isReturn = Boolean(it.is_return);
+
+                const prod = it.product_id ? db.getProductById(it.product_id) : (it.barcode ? db.getProductByBarcode(it.barcode) : null);
+                const itemMrp = Number(it.mrp && it.mrp > 0 ? it.mrp : (prod?.mrp && prod.mrp > 0 ? prod.mrp : (prod?.selling_price || unitPrice)));
+                const savedPerPc = Math.max(0, itemMrp - unitPrice);
 
                 return (
                   <tr key={idx} style={{ borderBottom: "1px solid #e2e8f0", background: idx % 2 === 0 ? "#ffffff" : "#f8fafc" }}>
@@ -197,11 +218,19 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
                       </div>
                       {it.barcode && <div style={{ fontSize: "10px", color: "#64748b", fontFamily: "monospace" }}>{it.barcode}</div>}
                     </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", color: "#64748b" }}>
+                      <div>{itemMrp.toFixed(2)}</div>
+                      {savedPerPc > 0 && (
+                        <div style={{ fontSize: "9px", color: "#16a34a", fontWeight: "bold" }}>
+                          -₹{(savedPerPc * itemQty).toFixed(0)}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace", fontWeight: "600" }}>
+                      {unitPrice.toFixed(2)}
+                    </td>
                     <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: "bold", fontFamily: "monospace" }}>
                       {qty(itemQty)}
-                    </td>
-                    <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "monospace" }}>
-                      {unitPrice.toFixed(2)}
                     </td>
                     {isGst && (
                       <td style={{ padding: "8px 10px", textAlign: "right", fontSize: "11px", color: "#475569" }}>
@@ -216,7 +245,7 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
               })
             ) : (
               <tr>
-                <td colSpan={isGst ? 5 : 4} style={{ padding: "16px", textAlign: "center", fontStyle: "italic", color: "#64748b" }}>
+                <td colSpan={isGst ? 6 : 5} style={{ padding: "16px", textAlign: "center", fontStyle: "italic", color: "#64748b" }}>
                   No line items attached to bill.
                 </td>
               </tr>
@@ -226,7 +255,21 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
 
         {/* ─── FINANCIAL TOTALS ─── */}
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "20px" }}>
-          <div style={{ width: "300px", fontSize: "11px" }}>
+          <div style={{ width: "320px", fontSize: "11px" }}>
+            {totalMrp > totalSelling && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "#64748b", borderBottom: "1px solid #f1f5f9" }}>
+                <span>Total MRP Value:</span>
+                <span style={{ fontFamily: "monospace" }}>₹{totalMrp.toFixed(2)}</span>
+              </div>
+            )}
+
+            {mrpSavings > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "#16a34a", borderBottom: "1px solid #f1f5f9" }}>
+                <span>Product Savings (-):</span>
+                <span style={{ fontFamily: "monospace", fontWeight: "600" }}>-₹{mrpSavings.toFixed(2)}</span>
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f1f5f9" }}>
               <span style={{ color: "#475569" }}>Subtotal:</span>
               <span style={{ fontFamily: "monospace", fontWeight: "600" }}>₹{Number(i.subtotal || 0).toFixed(2)}</span>
@@ -234,7 +277,7 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
 
             {Number(i.discount_amount) > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", color: "#dc2626", borderBottom: "1px solid #f1f5f9" }}>
-                <span>Discount (-):</span>
+                <span>Special Discount (-):</span>
                 <span style={{ fontFamily: "monospace", fontWeight: "600" }}>-₹{Number(i.discount_amount).toFixed(2)}</span>
               </div>
             )}
@@ -265,6 +308,14 @@ export function A4Receipt({ invoice: i, items = [], storeSettings }: A4ReceiptPr
                 ₹{Number(i.grand_total || 0).toFixed(2)}
               </span>
             </div>
+
+            {/* ─── PROMINENT SAVINGS HIGHLIGHT ─── */}
+            {totalSaved > 0 && (
+              <div style={{ marginTop: "10px", padding: "8px 12px", background: "#f0fdf4", border: "1px dashed #22c55e", borderRadius: "6px", display: "flex", justifyContent: "space-between", alignItems: "center", color: "#15803d", fontWeight: "bold" }}>
+                <span style={{ fontSize: "12px", letterSpacing: "0.5px" }}>🎉 TOTAL AMOUNT SAVED:</span>
+                <span style={{ fontSize: "15px", fontFamily: "monospace" }}>₹{totalSaved.toFixed(2)}</span>
+              </div>
+            )}
           </div>
         </div>
 

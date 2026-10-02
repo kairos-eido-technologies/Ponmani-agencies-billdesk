@@ -1,6 +1,6 @@
 import React from "react";
 import { inr, qty } from "@/lib/format";
-import { Invoice, InvoiceItem } from "@/lib/db/db";
+import { db, Invoice, InvoiceItem } from "@/lib/db/db";
 import { PonmaniLogo } from "./PonmaniLogo";
 
 interface ThermalReceiptProps {
@@ -72,6 +72,22 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
 
   const totalQty = items.reduce((acc, it) => acc + Number(it.qty || 1), 0);
 
+  // Compute MRP & Savings
+  let totalMrp = 0;
+  let totalSelling = 0;
+  items.forEach((it: any) => {
+    const itemQty = Number(it.qty || 1);
+    const unitPrice = Number(it.unit_price || it.price || 0);
+    const prod = it.product_id ? db.getProductById(it.product_id) : (it.barcode ? db.getProductByBarcode(it.barcode) : null);
+    const itemMrp = Number(it.mrp && it.mrp > 0 ? it.mrp : (prod?.mrp && prod.mrp > 0 ? prod.mrp : (prod?.selling_price || unitPrice)));
+    totalMrp += itemMrp * itemQty;
+    totalSelling += unitPrice * itemQty;
+  });
+
+  const mrpSavings = Math.max(0, totalMrp - totalSelling);
+  const discountSavings = Number(i.discount_amount || 0);
+  const totalSaved = mrpSavings + discountSavings;
+
   return (
     <div
       className="thermal-receipt bg-white text-black p-3 mx-auto select-none"
@@ -127,11 +143,12 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
 
       {/* ─── ITEMS TABLE ─── */}
       <div className="mb-2">
-        <div className="flex justify-between font-bold text-[10px] border-y border-black py-1 mb-1 bg-gray-100 px-1">
+        <div className="flex justify-between font-bold text-[9.5px] border-y border-black py-1 mb-1 bg-gray-100 px-1">
           <span className="flex-1">ITEM</span>
-          <span className="w-10 text-center">QTY</span>
-          <span className="w-16 text-right">RATE(₹)</span>
-          <span className="w-20 text-right">AMT(₹)</span>
+          <span className="w-12 text-right">MRP(₹)</span>
+          <span className="w-12 text-right">RATE(₹)</span>
+          <span className="w-8 text-center">QTY</span>
+          <span className="w-14 text-right">AMT(₹)</span>
         </div>
 
         {items && items.length > 0 ? (
@@ -143,24 +160,36 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
             const taxRate = isGst ? Number(it.tax_rate || it.gst_rate || 0) : 0;
             const isReturn = Boolean(it.is_return);
 
+            const prod = it.product_id ? db.getProductById(it.product_id) : (it.barcode ? db.getProductByBarcode(it.barcode) : null);
+            const itemMrp = Number(it.mrp && it.mrp > 0 ? it.mrp : (prod?.mrp && prod.mrp > 0 ? prod.mrp : (prod?.selling_price || unitPrice)));
+            const savedPerPc = Math.max(0, itemMrp - unitPrice);
+
             return (
-              <div key={idx} className="py-1 border-b border-gray-200 text-[10px] flex justify-between items-start px-1">
-                <span className="flex-1 pr-1 break-words font-bold">
-                  {name}
-                  {taxRate > 0 && (
-                    <span className="text-gray-500 font-normal text-[8.5px] ml-1">
-                      (GST {taxRate}%)
-                    </span>
+              <div key={idx} className="py-1 border-b border-gray-200 text-[9.5px] flex justify-between items-start px-1">
+                <div className="flex-1 pr-1 break-words">
+                  <div className="font-bold">
+                    {name}
+                    {taxRate > 0 && (
+                      <span className="text-gray-500 font-normal text-[8px] ml-1">
+                        (GST {taxRate}%)
+                      </span>
+                    )}
+                    {isReturn && (
+                      <span className="ml-1 text-[7.5px] bg-black text-white px-1 uppercase">
+                        [R]
+                      </span>
+                    )}
+                  </div>
+                  {savedPerPc > 0 && (
+                    <div className="text-[8px] text-green-800 font-bold">
+                      ★ Saved ₹{(savedPerPc * itemQty).toFixed(2)}
+                    </div>
                   )}
-                  {isReturn && (
-                    <span className="ml-1 text-[8px] bg-black text-white px-1 uppercase">
-                      [R]
-                    </span>
-                  )}
-                </span>
-                <span className="w-10 text-center font-bold">{qty(itemQty)}</span>
-                <span className="w-16 text-right">{unitPrice.toFixed(2)}</span>
-                <span className="w-20 text-right font-bold">{totalPrice.toFixed(2)}</span>
+                </div>
+                <span className="w-12 text-right font-mono text-gray-600 text-[9px]">{itemMrp.toFixed(2)}</span>
+                <span className="w-12 text-right font-mono font-semibold">{unitPrice.toFixed(2)}</span>
+                <span className="w-8 text-center font-bold font-mono">{qty(itemQty)}</span>
+                <span className="w-14 text-right font-bold font-mono">{totalPrice.toFixed(2)}</span>
               </div>
             );
           })
@@ -178,15 +207,27 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
           <span className="font-mono font-bold">{items.length} items ({totalQty} pcs)</span>
         </div>
 
+        <div className="flex justify-between text-gray-700 text-[9.5px]">
+          <span>Total MRP Value:</span>
+          <span className="font-mono font-bold">₹{totalMrp.toFixed(2)}</span>
+        </div>
+
+        {mrpSavings > 0 && (
+          <div className="flex justify-between text-green-800 text-[9.5px]">
+            <span className="font-bold">Product Savings (-):</span>
+            <span className="font-mono font-bold">-₹{mrpSavings.toFixed(2)}</span>
+          </div>
+        )}
+
         <div className="flex justify-between">
-          <span>Subtotal:</span>
-          <span className="font-mono">₹{Number(i.subtotal || 0).toFixed(2)}</span>
+          <span>Subtotal (Our Price):</span>
+          <span className="font-mono font-bold">₹{Number(i.subtotal || 0).toFixed(2)}</span>
         </div>
 
         {Number(i.discount_amount) > 0 && (
           <div className="flex justify-between text-gray-800">
-            <span>Discount (-):</span>
-            <span className="font-mono">-₹{Number(i.discount_amount).toFixed(2)}</span>
+            <span>Special Discount (-):</span>
+            <span className="font-mono font-bold">-₹{Number(i.discount_amount).toFixed(2)}</span>
           </div>
         )}
 
@@ -208,6 +249,14 @@ export function ThermalReceipt({ invoice: i, items = [], storeSettings }: Therma
               <span className="font-mono">₹{sgst.toFixed(2)}</span>
             </div>
           </>
+        )}
+
+        {/* ─── PROMINENT SAVINGS HIGHLIGHT BADGE ─── */}
+        {totalSaved > 0 && (
+          <div className="my-2 py-1.5 px-2 border-2 border-dashed border-black bg-gray-100 text-center font-bold tracking-wide">
+            <div className="text-[10.5px]">★★★ TOTAL AMOUNT SAVED ★★★</div>
+            <div className="text-[13px] font-mono mt-0.5">₹{totalSaved.toFixed(2)}</div>
+          </div>
         )}
 
         {/* ─── GRAND TOTAL HIGHLIGHT BOX ─── */}

@@ -87,21 +87,23 @@ function randDate(daysAgo: number, daysAgoMin = 0): string {
 }
 
 export function generateUtensilsSeedData() {
-  // ── 1. Inventory (1,200 products) ───────────────────────────────────────
+  // ── 1. Inventory (4,000 products) ───────────────────────────────────────
   const inventory: any[] = [];
   let itemCounter = 1;
-  for (let i = 0; i < 1200; i++) {
+  for (let i = 0; i < 4000; i++) {
     const base = BASE_PRODUCTS[i % BASE_PRODUCTS.length];
     const brand = BRANDS[Math.floor(i / BASE_PRODUCTS.length) % BRANDS.length];
     const size = SIZES[i % SIZES.length];
-    const name = `${brand} ${base.name} ${size}`;
-    const barcode = `${base.prefix}${fmtNum(itemCounter, 4)}`;
-    const sku = `KSH-${base.prefix}-${fmtNum(itemCounter, 4)}`;
+    const variantNum = Math.floor(i / (BASE_PRODUCTS.length * BRANDS.length)) + 1;
+    const variantSuffix = variantNum > 1 ? ` v${variantNum}` : "";
+    const name = `${brand} ${base.name} ${size}${variantSuffix}`;
+    const barcode = `${base.prefix}${fmtNum(itemCounter, 5)}`;
+    const sku = `KSH-${base.prefix}-${fmtNum(itemCounter, 5)}`;
     const cost = base.cost + randInt(-50, 150);
     const sell = Math.round(cost * (1.25 + Math.random() * 0.2));
 
     inventory.push({
-      id: `inv-${fmtNum(itemCounter)}`,
+      id: `inv-${fmtNum(itemCounter, 6)}`,
       barcode,
       name,
       category: base.cat,
@@ -119,19 +121,19 @@ export function generateUtensilsSeedData() {
     itemCounter++;
   }
 
-  // ── 2. Vendors (50 wholesale suppliers) ──────────────────────────────────
+  // ── 2. Vendors (100 wholesale suppliers) ──────────────────────────────────
   const vendors: any[] = [];
-  for (let v = 1; v <= 50; v++) {
+  for (let v = 1; v <= 100; v++) {
     const fn = randFrom(CUSTOMER_FIRST);
     const ln = randFrom(CUSTOMER_LAST);
     const town = randFrom(TOWNS);
     const company = `${fn} ${randFrom(["Utensils Wholesale", "Steel Traders", "Kitchen Appliances", "Metal Industries", "Distributors"])} ${town}`;
     vendors.push({
-      id: `ven-${fmtNum(v, 3)}`,
+      id: `ven-${fmtNum(v, 4)}`,
       name: `${fn} ${ln}`,
       company_name: company,
       phone: `9${randInt(100000000, 999999999)}`,
-      email: `${fn.toLowerCase()}.${town.toLowerCase()}@utensilstrade.in`,
+      email: `${fn.toLowerCase()}.${town.toLowerCase()}${v}@utensilstrade.in`,
       gst_number: `33AA${randFrom(["B","C","D","E","F"])}C${fmtNum(v, 4)}B1Z${(v % 9) + 1}`,
       address: `${randInt(1, 120)} Main Road, ${town}, Tamil Nadu`,
       balance_due: randInt(0, 75000),
@@ -139,9 +141,9 @@ export function generateUtensilsSeedData() {
     });
   }
 
-  // ── 3. Customers (2,000 retail buyers) ──────────────────────────────────
+  // ── 3. Customers (5,000 retail buyers) ──────────────────────────────────
   const customers: any[] = [];
-  for (let c = 1; c <= 2000; c++) {
+  for (let c = 1; c <= 5000; c++) {
     const fn = CUSTOMER_FIRST[(c - 1) % CUSTOMER_FIRST.length];
     const ln = CUSTOMER_LAST[Math.floor((c - 1) / CUSTOMER_FIRST.length) % CUSTOMER_LAST.length];
     const town = TOWNS[c % TOWNS.length];
@@ -150,7 +152,7 @@ export function generateUtensilsSeedData() {
     const totalSpent = randInt(800, 150000);
 
     customers.push({
-      id: `cust-${fmtNum(c)}`,
+      id: `cust-${fmtNum(c, 5)}`,
       name,
       mobile: `9${randInt(100000000, 999999999)}`,
       email: `${fn.toLowerCase()}${c}@gmail.com`,
@@ -162,20 +164,20 @@ export function generateUtensilsSeedData() {
     });
   }
 
-  // ── 4. Purchase Orders (1,000 POs + 6,000+ items) ─────────────────────
+  // ── 4. Purchase Orders (2,500 POs + 12,500+ items) ─────────────────────
   const purchase_orders: any[] = [];
   const purchase_items: any[] = [];
   let piCount = 1;
 
-  for (let p = 1; p <= 1000; p++) {
+  for (let p = 1; p <= 2500; p++) {
     const vendor = randFrom(vendors);
     const poDate = randDate(365, 0);
-    const status = p <= 750 ? "Received" : p <= 900 ? "Ordered" : "Draft";
-    const numItems = randInt(4, 8);
+    const status = p <= 1800 ? "Received" : p <= 2200 ? "Ordered" : "Draft";
+    const numItems = randInt(4, 7);
     let poTotal = 0;
     let poTax = 0;
-    const poId = `po-${fmtNum(p)}`;
-    const poNumber = `PO-2026-${fmtNum(p, 4)}`;
+    const poId = `po-${fmtNum(p, 5)}`;
+    const poNumber = `PO-2026-${fmtNum(p, 5)}`;
 
     for (let pi = 0; pi < numItems; pi++) {
       const prod = randFrom(inventory);
@@ -187,7 +189,7 @@ export function generateUtensilsSeedData() {
       poTax += lineTax;
 
       purchase_items.push({
-        id: `pi-${fmtNum(piCount++)}`,
+        id: `pi-${fmtNum(piCount++, 6)}`,
         po_id: poId,
         product_id: prod.id,
         product_name: prod.name,
@@ -215,20 +217,20 @@ export function generateUtensilsSeedData() {
     });
   }
 
-  // ── 5. Invoices + Items (5,000 Invoices + 15,000+ items) ──────────────
+  // ── 5. Invoices + Items (10,000 Invoices + 25,000+ items) ──────────────
   const invoices: any[] = [];
   const invoice_items: any[] = [];
   const loyalty_ledger: any[] = [];
   let iiCount = 1;
   let loyCount = 1;
 
-  for (let inv = 1; inv <= 5000; inv++) {
+  for (let inv = 1; inv <= 10000; inv++) {
     const customer = randFrom(customers);
     const invType = Math.random() < 0.55 ? "GST" : Math.random() < 0.8 ? "NON_GST" : "MIXED";
     const payMethod = randFrom(["CASH", "UPI", "CARD", "CASH", "UPI", "CASH"]);
     const invDate = randDate(365, 0);
-    const numItems = randInt(1, 5);
-    const invId = `invoice-${fmtNum(inv)}`;
+    const numItems = randInt(1, 4);
+    const invId = `invoice-${fmtNum(inv, 6)}`;
     const invNumber = `KSH-${new Date(invDate).getFullYear()}-${fmtNum(inv, 5)}`;
 
     let subtotal = 0;
@@ -246,7 +248,7 @@ export function generateUtensilsSeedData() {
       taxAmt += lineTax;
 
       invoice_items.push({
-        id: `ii-${fmtNum(iiCount++)}`,
+        id: `ii-${fmtNum(iiCount++, 6)}`,
         invoice_id: invId,
         product_id: prod.id,
         barcode: prod.barcode,
@@ -283,7 +285,7 @@ export function generateUtensilsSeedData() {
 
     if (pts > 0) {
       loyalty_ledger.push({
-        id: `loy-${fmtNum(loyCount++)}`,
+        id: `loy-${fmtNum(loyCount++, 6)}`,
         customer_id: customer.id,
         points_change: pts,
         reason: `Purchase ${invNumber}`,
@@ -292,10 +294,10 @@ export function generateUtensilsSeedData() {
     }
   }
 
-  // ── 6. Service Tickets (1,000 tickets) ─────────────────────────────────
+  // ── 6. Service Tickets (2,500 tickets) ─────────────────────────────────
   const service_tickets: any[] = [];
-  const serviceStatuses = ["Intake", "In Progress", "Ready", "Delivered"] as const;
-  for (let s = 1; s <= 1000; s++) {
+  const serviceStatuses: string[] = ["Intake", "In Progress", "Ready", "Delivered"];
+  for (let s = 1; s <= 2500; s++) {
     const cust = randFrom(customers);
     const prod = randFrom(inventory.filter((i) => i.category === "Kitchen Appliances" || i.category === "Pressure Cookers"));
     const est = randInt(150, 2500);
@@ -303,13 +305,13 @@ export function generateUtensilsSeedData() {
     const tokNum = String(((s - 1) % 99) + 1).padStart(2, "0");
 
     service_tickets.push({
-      id: `srv-${fmtNum(s)}`,
-      ticket_number: `PMA-S-2026-${fmtNum(s, 4)}`,
+      id: `srv-${fmtNum(s, 5)}`,
+      ticket_number: `PMA-S-2026-${fmtNum(s, 5)}`,
       queue_number: `TOKEN-#${tokNum}`,
       customer_id: cust.id,
       customer_name: cust.name,
       customer_mobile: cust.mobile,
-      device_name: prod.name,
+      device_name: prod ? prod.name : "Pressure Cooker 5L",
       serial_number: `SN${randInt(100000, 999999)}`,
       issue_description: randFrom(ISSUES),
       estimated_cost: est,
@@ -320,14 +322,14 @@ export function generateUtensilsSeedData() {
     });
   }
 
-  // ── 7. Scrap Entries (1,000 entries) ───────────────────────────────────
+  // ── 7. Scrap Entries (2,500 entries) ───────────────────────────────────
   const scrap_entries: any[] = [];
-  for (let sc = 1; sc <= 1000; sc++) {
+  for (let sc = 1; sc <= 2500; sc++) {
     const cust = randFrom(customers);
     const weight = randInt(1, 30);
     const priceKg = randInt(30, 150);
     scrap_entries.push({
-      id: `scrap-${fmtNum(sc)}`,
+      id: `scrap-${fmtNum(sc, 5)}`,
       customer_name: cust.name,
       customer_mobile: cust.mobile,
       item_type: randFrom(SCRAP),
@@ -339,14 +341,14 @@ export function generateUtensilsSeedData() {
     });
   }
 
-  // ── 8. Godown Transfers (1,000 transfers) ─────────────────────────────
+  // ── 8. Godown Transfers (2,500 transfers) ─────────────────────────────
   const godown_transfers: any[] = [];
-  for (let gt = 1; gt <= 1000; gt++) {
+  for (let gt = 1; gt <= 2500; gt++) {
     const prod = randFrom(inventory);
     const qty = randInt(5, 60);
     const dir = Math.random() < 0.5 ? "shop_to_godown" : "godown_to_shop";
     godown_transfers.push({
-      id: `gdt-${fmtNum(gt)}`,
+      id: `gdt-${fmtNum(gt, 5)}`,
       product_id: prod.id,
       product_name: prod.name,
       qty,

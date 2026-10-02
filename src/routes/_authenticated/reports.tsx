@@ -8,6 +8,7 @@ import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
 import { FileSpreadsheet, LineChart as ChartIcon, BarChart3, PieChart as PieIcon, TrendingUp, TrendingDown, Download, DollarSign } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, LineChart, Line } from "recharts";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/reports")({ component: ReportsPage });
 
@@ -25,10 +26,12 @@ type ReportType =
 const COLORS = ['oklch(0.72 0.16 160)', 'oklch(0.65 0.18 210)', 'oklch(0.78 0.15 75)', 'oklch(0.62 0.22 25)', 'oklch(0.68 0.15 300)'];
 
 function ReportsPage() {
+  const t = useT();
   const [activeReport, setActiveReport] = useState<ReportType>("profit_margin");
 
   const reportData = useQuery({
     queryKey: ["local-reports-data", activeReport],
+    staleTime: 60_000,
     queryFn: async () => {
       const store = db.getStore();
 
@@ -58,8 +61,9 @@ function ReportsPage() {
 
       if (activeReport === "category_breakdown") {
         const catMap: Record<string, number> = {};
+        const invMap = new Map(store.inventory.map((p) => [p.id, p]));
         store.invoice_items.forEach((ii) => {
-          const prod = store.inventory.find((p) => p.id === ii.product_id);
+          const prod = invMap.get(ii.product_id);
           const cat = prod?.category || "General";
           catMap[cat] = (catMap[cat] || 0) + ii.total_price;
         });
@@ -183,14 +187,14 @@ function ReportsPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Reports & Analytics Dashboard"
-        subtitle="Business Intelligence Reports with detailed product-wise Profit & Loss tracking"
+        title={t("reports.title")}
+        subtitle={t("reports.subtitle")}
         action={
           <button
             onClick={exportActiveReportExcel}
             className="h-10 px-4 rounded-md bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 hover:bg-emerald-500 transition shadow-lg shadow-emerald-950/40"
           >
-            <FileSpreadsheet className="h-4 w-4" /> Export Report to Excel
+            <FileSpreadsheet className="h-4 w-4" /> {t("reports.export")}
           </button>
         }
       />

@@ -6,9 +6,10 @@ import { inr } from "@/lib/format";
 import { FileSpreadsheet, Printer, Pencil } from "lucide-react";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BillViewerModal } from "@/components/BillViewerModal";
 import { EditInvoiceModal } from "@/components/EditInvoiceModal";
+import { useT } from "@/lib/lang/lang-context";
 
 function matchesDateFilter(dateStr: string, filter: string) {
   if (filter === "ALL") return true;
@@ -47,14 +48,22 @@ function matchesDateFilter(dateStr: string, filter: string) {
 export const Route = createFileRoute("/_authenticated/invoices/")({ component: InvoicesIndexPage });
 
 function InvoicesIndexPage() {
+  const t = useT();
   const [selectedBill, setSelectedBill] = useState<{ invoice: any; items: any[] } | null>(null);
   const [editingBill, setEditingBill] = useState<{ invoice: any; items: any[] } | null>(null);
   const [dateFilter, setDateFilter] = useState<"ALL" | "TODAY" | "YESTERDAY" | "WEEK" | "MONTH" | "LAST_MONTH">("ALL");
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const qc = useQueryClient();
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateFilter, search]);
 
   const invoices = useQuery({
     queryKey: ["local-invoices-list", dateFilter, search],
+    staleTime: 60_000,
     queryFn: async () => {
       await db.loadPromise;
       let all = db.getInvoices();
@@ -74,6 +83,12 @@ function InvoicesIndexPage() {
     },
   });
 
+  const allInvs = invoices.data || [];
+  const totalInvoicesCount = allInvs.length;
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(totalInvoicesCount / pageSize) || 1;
+  const activePage = Math.min(currentPage, totalPages);
+  const displayedInvoices = pageSize === -1 ? allInvs : allInvs.slice((activePage - 1) * pageSize, activePage * pageSize);
+
   function exportInvoicesExcel() {
     const data = (invoices.data || []).map(({ invoice: i }) => ({
       'Invoice Number': i.invoice_number,
@@ -87,39 +102,39 @@ function InvoicesIndexPage() {
       'Grand Total (₹)': i.grand_total,
       'Payment Method': i.payment_method,
     }));
-    ExcelEngine.exportToExcel(data, `Ponmani_Invoices_${new Date().toISOString().split('T')[0]}`);
-    toast.success("Invoices exported to Excel");
+    ExcelEngine.exportToExcel(data, `Ponmani_Sales_Invoices_${new Date().toISOString().split('T')[0]}`);
+    toast.success("Sales invoices log exported to Excel");
   }
 
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Sales Invoices & Billing Log"
-        subtitle={`${invoices.data?.length ?? 0} invoices recorded locally`}
+        title={t("invoices.title")}
+        subtitle={`${invoices.data?.length ?? 0} ${t("invoices.subtitle")}`}
         action={
           <button
             onClick={exportInvoicesExcel}
             className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
           >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> Export Invoices to Excel
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" /> {t("common.export")}
           </button>
         }
       />
       {/* Filter Bar */}
       <div className="card-surface p-3 flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-muted-foreground uppercase">Filter Date:</span>
+          <span className="text-xs font-bold text-muted-foreground uppercase">{t("common.filter")}:</span>
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value as any)}
             className="h-9 rounded bg-input border border-border px-3 text-xs font-bold text-foreground focus:border-primary focus:outline-none cursor-pointer"
           >
-            <option value="ALL">All Dates</option>
-            <option value="TODAY">Today</option>
-            <option value="YESTERDAY">Yesterday</option>
-            <option value="WEEK">Last 7 Days</option>
-            <option value="MONTH">This Month</option>
-            <option value="LAST_MONTH">Last Month</option>
+            <option value="ALL">{t("billing.dateAll")}</option>
+            <option value="TODAY">{t("billing.today")}</option>
+            <option value="YESTERDAY">{t("billing.yesterday")}</option>
+            <option value="WEEK">{t("billing.week")}</option>
+            <option value="MONTH">{t("billing.month")}</option>
+            <option value="LAST_MONTH">{t("billing.lastMonth")}</option>
           </select>
         </div>
 
@@ -127,7 +142,7 @@ function InvoicesIndexPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search invoice # or customer name/mobile..."
+            placeholder={t("invoices.search")}
             className="w-full h-9 px-3 rounded bg-input border border-border text-xs text-foreground focus:outline-none focus:border-primary"
           />
         </div>
@@ -136,14 +151,14 @@ function InvoicesIndexPage() {
         <table className="w-full text-sm">
           <thead className="text-[10px] uppercase text-muted-foreground tracking-wider bg-card border-b border-border">
             <tr>
-              <th className="text-left px-4 py-2.5">Invoice #</th>
-              <th className="text-left px-4 py-2.5">Date & Time</th>
-              <th className="text-left px-4 py-2.5">Customer</th>
-              <th className="text-left px-4 py-2.5">Type</th>
-              <th className="text-right px-4 py-2.5">Subtotal</th>
-              <th className="text-right px-4 py-2.5">Tax (GST)</th>
-              <th className="text-right px-4 py-2.5">Grand Total</th>
-              <th className="text-right px-4 py-2.5">View</th>
+              <th className="text-left px-4 py-2.5">{t("billing.col.invoice")}</th>
+              <th className="text-left px-4 py-2.5">{t("common.date")}</th>
+              <th className="text-left px-4 py-2.5">{t("billing.col.customer")}</th>
+              <th className="text-left px-4 py-2.5">{t("billing.col.type")}</th>
+              <th className="text-right px-4 py-2.5">{t("billing.col.subtotal")}</th>
+              <th className="text-right px-4 py-2.5">{t("billing.col.gst")}</th>
+              <th className="text-right px-4 py-2.5">{t("billing.col.total")}</th>
+              <th className="text-right px-4 py-2.5">{t("billing.col.actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -161,7 +176,7 @@ function InvoicesIndexPage() {
                 </td>
               </tr>
             )}
-            {invoices.data?.map(({ invoice: i, items }) => (
+            {displayedInvoices.map(({ invoice: i, items }) => (
               <tr key={i.id} className="hover:bg-secondary/40 transition">
                 <td className="px-4 py-2.5 font-mono font-bold text-primary">{i.invoice_number}</td>
                 <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">
@@ -199,6 +214,75 @@ function InvoicesIndexPage() {
             ))}
           </tbody>
         </table>
+
+        {/* High Performance Invoice Pagination Controls */}
+        {totalInvoicesCount > 0 && (
+          <div className="p-3 border-t border-border bg-card/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-muted-foreground font-mono text-[11px]">
+              Showing <span className="font-bold text-foreground">{(activePage - 1) * (pageSize === -1 ? totalInvoicesCount : pageSize) + 1}</span> to{" "}
+              <span className="font-bold text-foreground">{Math.min(activePage * (pageSize === -1 ? totalInvoicesCount : pageSize), totalInvoicesCount)}</span> of{" "}
+              <span className="font-bold text-foreground">{totalInvoicesCount}</span> invoices
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-muted-foreground text-[11px]">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 px-2 rounded bg-input border border-border text-xs font-mono font-semibold text-foreground cursor-pointer"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={-1}>All ({totalInvoicesCount})</option>
+                </select>
+              </div>
+
+              {pageSize !== -1 && totalPages > 1 && (
+                <div className="flex items-center gap-1 font-mono">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={activePage === 1}
+                    className="h-8 px-2 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    «
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                    disabled={activePage === 1}
+                    className="h-8 px-2.5 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    ‹ Prev
+                  </button>
+
+                  <span className="px-2.5 py-1 text-xs font-bold text-primary bg-primary/10 rounded border border-primary/20">
+                    {activePage} / {totalPages}
+                  </span>
+
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                    disabled={activePage >= totalPages}
+                    className="h-8 px-2.5 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    Next ›
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={activePage >= totalPages}
+                    className="h-8 px-2 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                  >
+                    »
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedBill && (

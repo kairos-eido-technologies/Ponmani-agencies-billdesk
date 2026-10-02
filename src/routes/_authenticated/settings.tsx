@@ -1,16 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { db } from "@/lib/db/db";
+import { db, User } from "@/lib/db/db";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
-import { Settings as SettingsIcon, Printer, Database, Key, ScanBarcode, ShieldCheck, Download, Upload, RefreshCw, CheckCircle, AlertTriangle, Trash2, Sprout } from "lucide-react";
+import { Settings as SettingsIcon, Printer, Database, Key, ScanBarcode, ShieldCheck, Download, Upload, RefreshCw, CheckCircle, AlertTriangle, Trash2, Languages, UserPlus, Edit3, X, User as UserIcon, Lock, Store, RotateCcw, AlertOctagon, CheckSquare, Square } from "lucide-react";
+import { useLang, useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/settings")({ component: SettingsPage });
 
 function SettingsPage() {
   const qc = useQueryClient();
+  const t = useT();
+  const { lang, setLang } = useLang();
   const settingsQuery = useQuery({
     queryKey: ["local-settings"],
     queryFn: async () => db.getSettings(),
@@ -30,9 +33,102 @@ function SettingsPage() {
   const [scannerTestInput, setScannerTestInput] = useState("");
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seedProgress, setSeedProgress] = useState<string[]>([]);
-  const [showSeedConfirm, setShowSeedConfirm] = useState(false);
+
+  // Sync form when query loads
+  useEffect(() => {
+    if (settingsQuery.data) {
+      setSettingsForm(settingsQuery.data);
+    }
+  }, [settingsQuery.data]);
+
+  // Store Provisioning & Factory Reset State
+  const [showClearTxModal, setShowClearTxModal] = useState(false);
+  const [showFactoryResetModal, setShowFactoryResetModal] = useState(false);
+  const [isProcessingReset, setIsProcessingReset] = useState(false);
+  const [factoryResetForm, setFactoryResetForm] = useState({
+    shop_name: "",
+    shop_address: "",
+    shop_phone: "",
+    shop_gstin: "",
+    receipt_header_note: "",
+    receipt_footer_note: "",
+    keepProducts: true,
+    confirmText: "",
+  });
+
+  // Staff Account Management State
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState<User | null>(null);
+  const [staffForm, setStaffForm] = useState<{ id?: string; username: string; role: "Admin" | "Cashier"; pin: string }>({
+    username: "",
+    role: "Cashier",
+    pin: "",
+  });
+
+  function handleOpenAddStaff() {
+    setStaffForm({
+      username: "",
+      role: "Cashier",
+      pin: "",
+    });
+    setShowStaffModal(true);
+  }
+
+  function handleOpenEditStaff(u: User) {
+    setStaffForm({
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      pin: u.pin,
+    });
+    setShowStaffModal(true);
+  }
+
+  function handleSaveStaff(e: React.FormEvent) {
+    e.preventDefault();
+    if (!staffForm.username.trim()) {
+      toast.error("Username is required");
+      return;
+    }
+    if (!staffForm.pin.trim() || staffForm.pin.length < 4) {
+      toast.error("PIN must be at least 4 digits");
+      return;
+    }
+    db.saveUser({
+      id: staffForm.id,
+      username: staffForm.username.trim().toLowerCase(),
+      role: staffForm.role,
+      pin: staffForm.pin.trim(),
+    });
+    toast.success(staffForm.id ? "Staff account updated!" : "New staff account created!");
+    qc.invalidateQueries({ queryKey: ["local-users"] });
+    setShowStaffModal(false);
+  }
+
+  function handleDeleteStaff(u: User) {
+    const allUsers = users.data || [];
+    const adminCount = allUsers.filter((x) => x.role === "Admin").length;
+    if (u.role === "Admin" && adminCount <= 1) {
+      toast.error(t("settings.staff.cannotDeleteAdmin"));
+      return;
+    }
+    setStaffToDelete(u);
+  }
+
+  function executeDeleteStaff() {
+    if (!staffToDelete) return;
+    const allUsers = users.data || [];
+    const adminCount = allUsers.filter((x) => x.role === "Admin").length;
+    if (staffToDelete.role === "Admin" && adminCount <= 1) {
+      toast.error(t("settings.staff.cannotDeleteAdmin"));
+      setStaffToDelete(null);
+      return;
+    }
+    db.deleteUser(staffToDelete.id || staffToDelete.username);
+    toast.success(`Staff account '${staffToDelete.username}' deleted.`);
+    qc.invalidateQueries({ queryKey: ["local-users"] });
+    setStaffToDelete(null);
+  }
 
   function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
@@ -81,33 +177,109 @@ function SettingsPage() {
     window.print();
   }
 
-  async function handleSeedUtensils() {
-    setIsSeeding(true);
-    setSeedProgress([]);
-    setShowSeedConfirm(false);
+  async function handleClearTransactions() {
+    setIsProcessingReset(true);
     try {
-      await db.wipeAndSeedUtensils((msg) => {
-        setSeedProgress((prev) => [...prev, msg]);
-      });
-      setSeedProgress((prev) => [...prev, '✓ All done! Reloading in 2s...']);
-      toast.success("Utensils demo data seeded successfully!");
-      setTimeout(() => window.location.reload(), 2000);
+      try {
+        ExcelEngine.exportFullBackup();
+        toast.info("Pre-reset backup snapshot generated automatically!");
+      } catch (e) {
+        console.warn("Snapshot backup before clear failed:", e);
+      }
+
+      await db.clearTransactionsOnly();
+      toast.success("Past transactions cleared! Billing restarted from Bill #0001.");
+      qc.invalidateQueries();
+      setShowClearTxModal(false);
     } catch (err: any) {
-      toast.error("Seeding failed: " + err.message);
-      setSeedProgress((prev) => [...prev, '✗ Error: ' + err.message]);
+      toast.error("Failed to clear transactions: " + (err.message || String(err)));
     } finally {
-      setIsSeeding(false);
+      setIsProcessingReset(false);
     }
   }
+
+  async function handleFactoryReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (factoryResetForm.confirmText.trim().toUpperCase() !== "RESET") {
+      toast.error("Please type 'RESET' in the confirmation box to proceed.");
+      return;
+    }
+    if (!factoryResetForm.shop_name.trim()) {
+      toast.error("Store Name is required.");
+      return;
+    }
+
+    setIsProcessingReset(true);
+    try {
+      try {
+        ExcelEngine.exportFullBackup();
+        toast.info("Pre-reset backup snapshot generated automatically!");
+      } catch (e) {
+        console.warn("Snapshot backup before factory reset failed:", e);
+      }
+
+      await db.factoryResetStore({
+        shop_name: factoryResetForm.shop_name.trim(),
+        shop_address: factoryResetForm.shop_address.trim(),
+        shop_phone: factoryResetForm.shop_phone.trim(),
+        shop_gstin: factoryResetForm.shop_gstin.trim(),
+        receipt_header_note: factoryResetForm.receipt_header_note.trim(),
+        receipt_footer_note: factoryResetForm.receipt_footer_note.trim(),
+        keepProducts: factoryResetForm.keepProducts,
+      });
+
+      toast.success(`Factory reset complete! Initialized for "${factoryResetForm.shop_name.trim()}". Admin PIN: 1234.`);
+      setShowFactoryResetModal(false);
+
+      qc.invalidateQueries();
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (err: any) {
+      toast.error("Factory reset failed: " + (err.message || String(err)));
+      setIsProcessingReset(false);
+    }
+  }
+
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <PageHeader
-        title="Settings, Printers & Data Management"
-        subtitle="Local hardware drivers, staff PIN security, ESC/POS thermal printing, and file-based backups"
+        title={t("settings.title")}
+        subtitle={t("settings.subtitle")}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Language Switcher Card */}
+        <div className="card-surface p-5 border-l-4 border-l-primary/50 space-y-4">
+          <div className="text-sm font-bold text-foreground flex items-center gap-2 border-b border-border pb-2">
+            <Languages className="h-4 w-4 text-primary" /> {t("settings.language")}
+          </div>
+          <p className="text-xs text-muted-foreground">{t("settings.language.desc")}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setLang("en")}
+              className={`flex-1 h-10 rounded-lg border text-sm font-bold transition ${
+                lang === "en"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-secondary text-muted-foreground border-border hover:bg-muted"
+              }`}
+            >
+              🇬🇧 {t("settings.language.english")}
+            </button>
+            <button
+              onClick={() => setLang("ta")}
+              className={`flex-1 h-10 rounded-lg border text-sm font-bold transition ${
+                lang === "ta"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-secondary text-muted-foreground border-border hover:bg-muted"
+              }`}
+            >
+              🇮🇳 {t("settings.language.tamil")}
+            </button>
+          </div>
+        </div>
+
         {/* Store Profile Settings */}
         <div className="card-surface p-5 border-l-4 border-l-primary space-y-4">
           <div className="text-sm font-bold text-foreground flex items-center gap-2 border-b border-border pb-2">
@@ -245,17 +417,61 @@ function SettingsPage() {
 
         {/* Staff PIN & Access Control */}
         <div className="card-surface p-5 border-l-4 border-l-amber-500 space-y-4">
-          <div className="text-sm font-bold text-foreground flex items-center gap-2 border-b border-border pb-2">
-            <Key className="h-4 w-4 text-amber-400" /> Local Staff PIN Security
+          <div className="flex justify-between items-center border-b border-border pb-2">
+            <div className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Key className="h-4 w-4 text-amber-400" /> {t("settings.staffPIN")}
+            </div>
+            <button
+              onClick={handleOpenAddStaff}
+              className="h-7 px-2.5 rounded bg-primary/15 border border-primary/30 text-primary hover:bg-primary/25 text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+            >
+              <UserPlus className="h-3.5 w-3.5" /> {t("settings.staff.add")}
+            </button>
           </div>
+
           <div className="space-y-2">
             {users.data?.map((u) => (
-              <div key={u.id} className="p-2.5 bg-card border border-border rounded flex justify-between items-center text-xs">
-                <div>
-                  <span className="font-bold text-foreground capitalize">{u.username}</span>
-                  <span className="text-muted-foreground font-mono ml-2">({u.role})</span>
+              <div key={u.id} className="p-3 bg-card border border-border rounded-lg flex justify-between items-center text-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-7 w-7 rounded-md bg-secondary grid place-items-center text-primary font-bold">
+                    <UserIcon className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-foreground capitalize flex items-center gap-1.5">
+                      <span>{u.username}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold border ${
+                        u.role === "Admin"
+                          ? "bg-purple-500/15 text-purple-300 border-purple-500/30"
+                          : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                      }`}>
+                        {u.role}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-mono">
+                      {u.role === "Cashier" ? "Direct POS Billing & WhatsApp only" : "Full access to all 12 modules"}
+                    </div>
+                  </div>
                 </div>
-                <span className="font-mono bg-secondary px-2 py-0.5 rounded text-amber-400 font-bold">PIN: {u.pin}</span>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-mono bg-secondary px-2.5 py-1 rounded text-amber-400 font-bold text-xs border border-border">
+                    PIN: {u.pin}
+                  </span>
+                  <button
+                    onClick={() => handleOpenEditStaff(u)}
+                    title={t("settings.staff.edit")}
+                    className="h-7 w-7 rounded bg-secondary hover:bg-muted grid place-items-center text-muted-foreground hover:text-foreground transition border border-border"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteStaff(u)}
+                    title={t("settings.staff.delete")}
+                    className="h-7 w-7 rounded bg-destructive/15 hover:bg-destructive/25 grid place-items-center text-destructive transition border border-destructive/30"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -320,48 +536,70 @@ function SettingsPage() {
         </div>
       </div>
 
-      {/* Seed Demo Data Card */}
-      <div className="card-surface p-5 border-l-4 border-l-amber-500 space-y-4">
-        <div className="text-sm font-bold text-foreground flex items-center gap-2 border-b border-border pb-2">
-          <Sprout className="h-4 w-4 text-amber-400" /> Seed Demo Data — Utensils & Kitchen Shop
-        </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Wipe all existing data and seed <strong className="text-foreground font-bold">12,000+ demo data records</strong> relevant to a{" "}
-          <strong className="text-amber-400 font-bold">utensils & kitchen products store</strong>. This loads{" "}
-          <strong>70+ products</strong>, <strong>500 customers</strong>, <strong>3,000 invoices</strong>,{" "}
-          <strong>7,500+ line items</strong>, <strong>150 purchase orders</strong>, <strong>300 service tickets</strong>, and more.
-        </p>
-        <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded text-xs text-destructive font-semibold">
-          <Trash2 className="h-4 w-4 shrink-0" />
-          WARNING: This will permanently delete ALL current data (inventory, customers, invoices, etc.)
+      {/* Store Provisioning & Factory Reset Section */}
+      <div className="card-surface p-6 border-l-4 border-l-rose-500 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-border pb-3">
+          <div>
+            <div className="text-base font-bold text-foreground flex items-center gap-2">
+              <Store className="h-5 w-5 text-rose-400" /> Store Provisioning & Factory Reset
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Configure this desktop application for a new store client or reset test billing data before handing over to the shop owner.
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowClearTxModal(true)}
+              className="h-9 px-3.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-1.5 hover:bg-amber-500/25 transition shadow-xs"
+            >
+              <RotateCcw className="h-4 w-4" /> Clear Past Transactions
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFactoryResetForm({
+                  shop_name: settingsForm.shop_name || "Ponmani Agencies",
+                  shop_address: settingsForm.shop_address || "",
+                  shop_phone: settingsForm.shop_phone || "",
+                  shop_gstin: settingsForm.shop_gstin || "",
+                  receipt_header_note: settingsForm.receipt_header_note || "",
+                  receipt_footer_note: settingsForm.receipt_footer_note || "",
+                  keepProducts: true,
+                  confirmText: "",
+                });
+                setShowFactoryResetModal(true);
+              }}
+              className="h-9 px-4 rounded bg-rose-600 text-white font-bold text-xs flex items-center gap-2 hover:bg-rose-500 transition shadow-lg shadow-rose-950/40"
+            >
+              <AlertOctagon className="h-4 w-4" /> Complete Factory Reset (New Store)
+            </button>
+          </div>
         </div>
 
-        {isSeeding ? (
-          <div className="space-y-2">
-            <div className="text-xs text-amber-400 font-bold animate-pulse flex items-center gap-2">
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Seeding in progress... do not close this window
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 space-y-2">
+            <div className="font-bold text-amber-300 flex items-center gap-1.5">
+              <RotateCcw className="h-3.5 w-3.5" /> Option 1: Clear Transactions Only (Start from Bill #0001)
             </div>
-            <div className="bg-card border border-border rounded p-3 max-h-40 overflow-y-auto space-y-0.5">
-              {seedProgress.map((msg, i) => (
-                <div key={i} className="text-[11px] font-mono text-muted-foreground">{msg}</div>
-              ))}
-            </div>
+            <p className="text-muted-foreground leading-relaxed">
+              Clears all demo sales, invoices, customer credit ledgers, service tickets, and expense logs.
+              <strong className="text-foreground"> Preserves</strong> your complete product catalog, categories, pricing, suppliers, customers, and shop branding.
+              Billing counters restart at <span className="font-mono text-amber-300 font-bold">INV-0001</span>.
+            </p>
           </div>
-        ) : seedProgress.length > 0 ? (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded p-3">
-            <div className="text-xs text-emerald-400 font-bold flex items-center gap-2">
-              <CheckCircle className="h-4 w-4" /> Seeding complete! Page reloading...
+
+          <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/20 space-y-2">
+            <div className="font-bold text-rose-300 flex items-center gap-1.5">
+              <Store className="h-3.5 w-3.5" /> Option 2: Full Factory Reset & New Store Onboarding
             </div>
+            <p className="text-muted-foreground leading-relaxed">
+              Deploys the desktop application for a brand new store client. Sets up their Store Name, Address, Phone, and GSTIN, resets Admin PIN to <span className="font-mono text-rose-300 font-bold">1234</span>, clears all past transactions, and allows choosing whether to retain or wipe product inventory.
+            </p>
           </div>
-        ) : (
-          <button
-            onClick={() => setShowSeedConfirm(true)}
-            className="h-9 px-4 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-2 transition shadow"
-          >
-            <Sprout className="h-4 w-4" /> Seed Utensils Demo Data (Wipe & Reset)
-          </button>
-        )}
+        </div>
       </div>
+
 
       {/* Restore Confirmation Dialog */}
       {showRestoreConfirm && (
@@ -391,42 +629,340 @@ function SettingsPage() {
         </div>
       )}
 
-      {/* Seed Confirm Dialog */}
-      {showSeedConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => setShowSeedConfirm(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-6 border-l-4 border-l-amber-500 space-y-5">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
-                <Trash2 className="h-5 w-5 text-amber-400" />
+      {/* Create / Edit Staff Account Modal */}
+      {showStaffModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => setShowStaffModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-6 border-l-4 border-l-primary space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-border">
+              <div className="font-bold text-base flex items-center gap-2 text-foreground">
+                <UserPlus className="h-4 w-4 text-primary" />
+                {staffForm.id ? t("settings.staff.edit") : t("settings.staff.add")}
+              </div>
+              <button onClick={() => setShowStaffModal(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStaff} className="space-y-4">
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">
+                  {t("settings.staff.username")}
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. cashier1, ravi, manager"
+                  value={staffForm.username}
+                  onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })}
+                  className="w-full h-9 rounded bg-input border border-border px-3 text-xs font-mono font-bold text-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">
+                  {t("settings.staff.role")}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStaffForm({ ...staffForm, role: "Cashier" })}
+                    className={`p-3 rounded-lg border text-left transition ${
+                      staffForm.role === "Cashier"
+                        ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-bold"
+                        : "bg-secondary/40 border-border text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="text-xs font-bold">Cashier</div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">
+                      Direct POS Billing & WhatsApp only
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffForm({ ...staffForm, role: "Admin" })}
+                    className={`p-3 rounded-lg border text-left transition ${
+                      staffForm.role === "Admin"
+                        ? "bg-purple-500/15 border-purple-500/40 text-purple-300 font-bold"
+                        : "bg-secondary/40 border-border text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="text-xs font-bold">Admin</div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">
+                      Full access to all 12 modules
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 block">
+                  {t("settings.staff.pin")}
+                </label>
+                <input
+                  type="password"
+                  required
+                  maxLength={6}
+                  placeholder="e.g. 1234"
+                  value={staffForm.pin}
+                  onChange={(e) => setStaffForm({ ...staffForm, pin: e.target.value.replace(/\D/g, "") })}
+                  className="w-full h-10 rounded bg-input border border-border px-3 text-center text-lg font-mono font-bold tracking-[0.3em] text-foreground focus:outline-none focus:border-primary"
+                />
+                <div className="text-[10px] text-muted-foreground mt-1">
+                  Enter 4 to 6 numeric digits used to log in at the staff login screen.
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setShowStaffModal(false)}
+                  className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-5 rounded bg-primary text-primary-foreground font-bold text-xs hover:accent-glow transition"
+                >
+                  {t("settings.staff.save")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Staff Confirmation Modal */}
+      {staffToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => setStaffToDelete(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-6 border-l-4 border-l-destructive space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 pb-2 border-b border-border">
+              <div className="h-10 w-10 rounded-full bg-destructive/15 text-destructive grid place-items-center shrink-0">
+                <Trash2 className="h-5 w-5" />
               </div>
               <div>
-                <div className="font-bold text-base">Wipe & Seed Utensils Data?</div>
-                <div className="text-xs text-muted-foreground mt-0.5">This action is irreversible without a backup.</div>
+                <div className="font-bold text-base text-foreground">
+                  {t("settings.staff.deleteConfirm")}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Staff Member: <span className="font-bold text-foreground capitalize font-mono">{staffToDelete.username}</span> ({staffToDelete.role})
+                </div>
               </div>
             </div>
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded p-3 text-xs text-amber-300 space-y-1">
-              <div className="font-bold text-amber-200">Wiping current database & seeding 12,000+ entries:</div>
-              <div>• 70+ Utensil & Kitchen inventory items</div>
-              <div>• 500 Tamil Nadu customers</div>
-              <div>• 3,000 Sales invoices (7,500+ items)</div>
-              <div>• 150 Purchase orders (750+ items)</div>
-              <div>• 300 Appliance service repair tickets</div>
-              <div>• 150 Scrap buyback entries & 200 godown transfers</div>
+
+            <div className="text-xs text-muted-foreground bg-destructive/10 border border-destructive/20 p-3 rounded-lg text-red-300">
+              This staff member will immediately lose access to POS billing and cannot sign in using this account.
             </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setShowSeedConfirm(false)} className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold">
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setStaffToDelete(null)}
+                className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold hover:bg-muted"
+              >
                 Cancel
               </button>
               <button
-                onClick={handleSeedUtensils}
-                className="h-9 px-5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition"
+                type="button"
+                onClick={executeDeleteStaff}
+                className="h-9 px-5 rounded bg-destructive text-destructive-foreground font-bold text-xs hover:opacity-90 transition"
               >
-                Yes, Wipe & Seed
+                {t("settings.staff.delete")} Account
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Clear Past Transactions Confirmation Modal */}
+      {showClearTxModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4" onClick={() => !isProcessingReset && setShowClearTxModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md card-surface p-6 border-l-4 border-l-amber-500 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 pb-2 border-b border-border">
+              <div className="h-10 w-10 rounded-full bg-amber-500/15 text-amber-400 grid place-items-center shrink-0">
+                <RotateCcw className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="font-bold text-base text-foreground">
+                  Clear Past Transactions Only
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Start fresh billing from Invoice #0001
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs text-muted-foreground">
+              <p>
+                This action will permanently delete all sales invoices, POS billing transactions, service repair tickets, and customer debt balances.
+              </p>
+              <div className="p-3 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <CheckCircle className="h-3.5 w-3.5" /> What will be kept:
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                  <li>All products, barcodes, stock levels & categories</li>
+                  <li>Store profile, tax settings & print templates</li>
+                  <li>Customer & supplier address books</li>
+                  <li>Staff accounts and login PINs</li>
+                </ul>
+              </div>
+              <p className="text-[11px] text-amber-300/80">
+                An automatic pre-reset backup workbook will be created before wiping transactions.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                disabled={isProcessingReset}
+                onClick={() => setShowClearTxModal(false)}
+                className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingReset}
+                onClick={handleClearTransactions}
+                className="h-9 px-5 rounded bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-2 transition"
+              >
+                {isProcessingReset && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                {isProcessingReset ? "Clearing..." : "Confirm & Clear Transactions"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Complete Factory Reset & New Store Onboarding Modal */}
+      {showFactoryResetModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm grid place-items-center p-4 overflow-y-auto" onClick={() => !isProcessingReset && setShowFactoryResetModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-6 border-l-4 border-l-rose-500 space-y-4 shadow-2xl my-8">
+            <div className="flex justify-between items-center pb-2 border-b border-border">
+              <div className="font-bold text-base flex items-center gap-2 text-foreground">
+                <Store className="h-5 w-5 text-rose-400" />
+                New Store Setup & Factory Reset
+              </div>
+              {!isProcessingReset && (
+                <button onClick={() => setShowFactoryResetModal(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleFactoryReset} className="space-y-4">
+              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertOctagon className="h-4 w-4 shrink-0" />
+                  Warning: Complete Store Re-provisioning
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  This wipes all past sales, invoices, customer debts, and service records. The admin login credentials will reset to:
+                  <span className="font-mono text-rose-200 font-bold ml-1">admin / PIN: 1234</span>.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <L label="New Store / Business Name *">
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ponmani Electricals & Hardware"
+                    value={factoryResetForm.shop_name}
+                    onChange={(e) => setFactoryResetForm({ ...factoryResetForm, shop_name: e.target.value })}
+                    className={ic}
+                  />
+                </L>
+
+                <L label="Store Address">
+                  <input
+                    type="text"
+                    placeholder="e.g. 12/4 Main Road, Tenkasi"
+                    value={factoryResetForm.shop_address}
+                    onChange={(e) => setFactoryResetForm({ ...factoryResetForm, shop_address: e.target.value })}
+                    className={ic}
+                  />
+                </L>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <L label="Phone Number">
+                    <input
+                      type="text"
+                      placeholder="e.g. +91 98765 43210"
+                      value={factoryResetForm.shop_phone}
+                      onChange={(e) => setFactoryResetForm({ ...factoryResetForm, shop_phone: e.target.value })}
+                      className={ic}
+                    />
+                  </L>
+                  <L label="GSTIN (Tax ID)">
+                    <input
+                      type="text"
+                      placeholder="e.g. 33AAAAA0000A1Z5"
+                      value={factoryResetForm.shop_gstin}
+                      onChange={(e) => setFactoryResetForm({ ...factoryResetForm, shop_gstin: e.target.value })}
+                      className={`${ic} font-mono`}
+                    />
+                  </L>
+                </div>
+
+                <div className="pt-2">
+                  <div
+                    onClick={() => setFactoryResetForm({ ...factoryResetForm, keepProducts: !factoryResetForm.keepProducts })}
+                    className="flex items-start gap-2.5 p-3 rounded-lg border border-border bg-secondary/40 cursor-pointer hover:bg-secondary transition"
+                  >
+                    <div className="mt-0.5 text-primary">
+                      {factoryResetForm.keepProducts ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                    <div className="text-xs">
+                      <div className="font-bold text-foreground">Retain product inventory catalog & categories</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {factoryResetForm.keepProducts
+                          ? "Products and prices will be retained so the new store doesn't have to re-enter items."
+                          : "Inventory catalog will be completely cleared for a 100% empty blank slate."}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-1">
+                  <label className="text-[10px] uppercase font-bold text-rose-400 mb-1 block">
+                    Type "RESET" to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Type RESET in capital letters"
+                    value={factoryResetForm.confirmText}
+                    onChange={(e) => setFactoryResetForm({ ...factoryResetForm, confirmText: e.target.value })}
+                    className="w-full h-10 rounded bg-input border border-rose-500/50 px-3 text-sm font-mono font-bold tracking-widest text-foreground focus:outline-none focus:border-rose-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  disabled={isProcessingReset}
+                  onClick={() => setShowFactoryResetModal(false)}
+                  className="h-9 px-4 rounded bg-secondary border border-border text-xs font-semibold hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isProcessingReset || factoryResetForm.confirmText.trim().toUpperCase() !== "RESET"}
+                  className="h-9 px-5 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 transition"
+                >
+                  {isProcessingReset && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  {isProcessingReset ? "Initializing Store..." : "Execute Factory Reset"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

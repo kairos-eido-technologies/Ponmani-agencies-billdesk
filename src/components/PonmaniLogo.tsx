@@ -25,7 +25,7 @@ export function PonmaniLogo({
 
   if (variant === "icon" || !showText) {
     return (
-      <div className={`inline-flex items-center justify-center ${className}`} style={style}>
+      <div className={`inline-flex items-center justify-center shrink-0 ${className}`} style={style}>
         <img
           src="/ponmani-pa-logo.png"
           alt="PA Monogram"
@@ -38,7 +38,7 @@ export function PonmaniLogo({
   if (variant === "bw") {
     // Pure Black B&W for 80mm Thermal Printer receipts
     return (
-      <div className={`flex flex-col items-center justify-center text-center text-black ${className}`} style={style}>
+      <div className={`flex flex-col items-center justify-center text-center text-black shrink-0 ${className}`} style={style}>
         <img
           src="/ponmani-pa-logo-bw.png"
           alt="PA Monogram"
@@ -59,14 +59,14 @@ export function PonmaniLogo({
 
   // Full Color UI & A4 Print Header
   return (
-    <div className={`inline-flex items-center gap-3 ${className}`} style={style}>
+    <div className={`inline-flex items-center gap-3 shrink-0 ${className}`} style={style}>
       <img
         src="/ponmani-pa-logo.png"
         alt="PA Monogram Logo"
         className={`${iconHeightClass} w-auto object-contain shrink-0 drop-shadow-xs`}
       />
       {showText && (
-        <div className="flex flex-col items-center justify-center text-center leading-none gap-1">
+        <div className="flex flex-col items-center justify-center text-center leading-none gap-1 shrink-0">
           <span className="font-serif font-black text-slate-900 tracking-[0.18em] uppercase text-base sm:text-lg leading-none">
             PONMANI
           </span>

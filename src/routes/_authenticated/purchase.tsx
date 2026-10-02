@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { db, Vendor, PurchaseOrder, PurchaseItem, InventoryItem } from "@/lib/db/db";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr } from "@/lib/format";
@@ -24,10 +24,12 @@ import {
 } from "lucide-react";
 import { POViewerModal } from "@/components/POViewerModal";
 import { POReceiveModal } from "@/components/POReceiveModal";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/purchase")({ component: PurchasePage });
 
 function PurchasePage() {
+  const t = useT();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"orders" | "vendors">("orders");
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,11 +46,13 @@ function PurchasePage() {
 
   const vendors = useQuery({
     queryKey: ["local-vendors"],
+    staleTime: 60_000,
     queryFn: async () => db.getVendors(),
   });
 
   const purchaseOrders = useQuery({
     queryKey: ["local-purchase-orders"],
+    staleTime: 60_000,
     queryFn: async () => db.getPurchaseOrders(),
   });
 
@@ -123,14 +127,30 @@ function PurchasePage() {
     toast.success("Purchase orders exported to Excel");
   }
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, activeTab]);
+
   // Filter Purchase Orders
-  const filteredPOs = (purchaseOrders.data || []).filter(({ order }) => {
+  const filteredPOs = (purchaseOrders.data || []).filter((item) => {
+    if (!item || !item.order) return false;
+    const { order } = item;
+    const poNum = order.po_number || "";
+    const vendorName = order.vendor_name || "";
     const matchesSearch =
-      order.po_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.vendor_name.toLowerCase().includes(searchQuery.toLowerCase());
+      poNum.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      vendorName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "ALL" || order.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const totalPOsCount = filteredPOs.length;
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(totalPOsCount / pageSize) || 1;
+  const activePage = Math.min(currentPage, totalPages);
+  const displayedPOs = pageSize === -1 ? filteredPOs : filteredPOs.slice((activePage - 1) * pageSize, activePage * pageSize);
 
   // Filter Vendors
   const filteredVendors = (vendors.data || []).filter(
@@ -144,15 +164,15 @@ function PurchasePage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Purchase & Supplier Management"
-        subtitle="Full PO editing, custom order notes, supplier onboarding, A4 printing, & WhatsApp sharing"
+        title={t("purchase.title")}
+        subtitle={t("purchase.subtitle")}
         action={
           <div className="flex gap-2">
             <button
               onClick={() => (activeTab === "vendors" ? exportVendorsExcel() : exportPOsExcel())}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> Export {activeTab === "vendors" ? "Suppliers" : "POs"}
+              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> {t("purchase.exportExcel")}
             </button>
 
             {activeTab === "vendors" ? (
@@ -160,14 +180,14 @@ function PurchasePage() {
                 onClick={handleCreateVendor}
                 className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:accent-glow transition"
               >
-                <Plus className="h-4 w-4" /> Onboard Supplier
+                <Plus className="h-4 w-4" /> {t("purchase.form.supplier")}
               </button>
             ) : (
               <button
                 onClick={handleCreatePO}
                 className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:accent-glow transition"
               >
-                <Plus className="h-4 w-4" /> Create Purchase Order
+                <Plus className="h-4 w-4" /> {t("purchase.createPO")}
               </button>
             )}
           </div>
@@ -183,7 +203,7 @@ function PurchasePage() {
               activeTab === "orders" ? "border-b-2 border-primary text-primary font-bold" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <ShoppingBag className="h-4 w-4" /> Purchase Orders ({purchaseOrders.data?.length ?? 0})
+            <ShoppingBag className="h-4 w-4" /> {t("purchase.title")} ({purchaseOrders.data?.length ?? 0})
           </button>
           <button
             onClick={() => setActiveTab("vendors")}
@@ -191,7 +211,7 @@ function PurchasePage() {
               activeTab === "vendors" ? "border-b-2 border-primary text-primary font-bold" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Truck className="h-4 w-4" /> Suppliers & Wholesalers ({vendors.data?.length ?? 0})
+            <Truck className="h-4 w-4" /> {t("purchase.form.supplier")} ({vendors.data?.length ?? 0})
           </button>
         </div>
 
@@ -201,7 +221,7 @@ function PurchasePage() {
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <input
               type="text"
-              placeholder={activeTab === "orders" ? "Search PO # or Supplier..." : "Search supplier name, GST..."}
+              placeholder={t("purchase.search")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full h-8 pl-8 pr-3 bg-card border border-border rounded text-xs focus:outline-none focus:border-primary"
@@ -214,10 +234,10 @@ function PurchasePage() {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="h-8 bg-card border border-border rounded text-xs px-2 focus:outline-none focus:border-primary font-semibold"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="Draft">Draft</option>
-              <option value="Ordered">Ordered</option>
-              <option value="Received">Received</option>
+              <option value="ALL">{t("purchase.status.all")}</option>
+              <option value="Draft">{t("purchase.status.draft")}</option>
+              <option value="Ordered">{t("purchase.status.ordered")}</option>
+              <option value="Received">{t("purchase.status.received")}</option>
             </select>
           )}
         </div>
@@ -229,19 +249,19 @@ function PurchasePage() {
             <table className="w-full text-sm">
               <thead className="text-[10px] uppercase text-muted-foreground tracking-wider bg-card border-b border-border">
                 <tr>
-                  <th className="text-left px-4 py-2.5">PO Number</th>
-                  <th className="text-left px-4 py-2.5">Supplier Name</th>
-                  <th className="text-center px-4 py-2.5">Status</th>
-                  <th className="text-center px-4 py-2.5">Items</th>
-                  <th className="text-right px-4 py-2.5">Total Amount</th>
-                  <th className="text-right px-4 py-2.5">Paid</th>
-                  <th className="text-right px-4 py-2.5">Due Balance</th>
-                  <th className="text-center px-4 py-2.5">Created Date</th>
-                  <th className="text-right px-4 py-2.5">Actions</th>
+                  <th className="text-left px-4 py-2.5">{t("purchase.col.po")}</th>
+                  <th className="text-left px-4 py-2.5">{t("purchase.col.supplier")}</th>
+                  <th className="text-center px-4 py-2.5">{t("purchase.col.status")}</th>
+                  <th className="text-center px-4 py-2.5">{t("purchase.col.items")}</th>
+                  <th className="text-right px-4 py-2.5">{t("purchase.col.total")}</th>
+                  <th className="text-right px-4 py-2.5">{t("billing.col.subtotal")}</th>
+                  <th className="text-right px-4 py-2.5">{t("common.total")}</th>
+                  <th className="text-center px-4 py-2.5">{t("purchase.col.date")}</th>
+                  <th className="text-right px-4 py-2.5">{t("purchase.col.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredPOs.map(({ order, items }) => {
+                {displayedPOs.map(({ order, items }) => {
                   const due = order.total_amount - order.paid_amount;
                   return (
                     <tr key={order.id} className="hover:bg-secondary/40 transition">
@@ -291,7 +311,7 @@ function PurchasePage() {
                         {inr(due)}
                       </td>
                       <td className="px-4 py-2.5 text-center font-mono text-xs text-muted-foreground">
-                        {order.created_at.split("T")[0]}
+                        {(order.created_at || "").split("T")[0] || "—"}
                       </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex justify-end gap-1">
@@ -340,6 +360,63 @@ function PurchasePage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Bar */}
+          {totalPOsCount > 0 && (
+            <div className="p-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="text-muted-foreground">
+                Showing{" "}
+                <span className="font-mono font-bold text-foreground">
+                  {pageSize === -1 ? 1 : Math.min((activePage - 1) * pageSize + 1, totalPOsCount)}
+                </span>{" "}
+                to{" "}
+                <span className="font-mono font-bold text-foreground">
+                  {pageSize === -1 ? totalPOsCount : Math.min(activePage * pageSize, totalPOsCount)}
+                </span>{" "}
+                of <span className="font-mono font-bold text-foreground">{totalPOsCount}</span> purchase orders
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="px-2 py-1 bg-secondary border border-border rounded text-xs font-mono font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={250}>250</option>
+                    <option value={-1}>All ({totalPOsCount})</option>
+                  </select>
+                </div>
+                {pageSize !== -1 && (
+                  <div className="flex items-center gap-1 font-mono">
+                    <button
+                      disabled={activePage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="px-2.5 py-1 bg-secondary border border-border rounded disabled:opacity-40 hover:bg-muted font-bold transition"
+                    >
+                      Prev
+                    </button>
+                    <span className="px-2 font-bold text-primary">
+                      {activePage} / {totalPages}
+                    </span>
+                    <button
+                      disabled={activePage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-2.5 py-1 bg-secondary border border-border rounded disabled:opacity-40 hover:bg-muted font-bold transition"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="card-surface">

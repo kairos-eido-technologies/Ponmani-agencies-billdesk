@@ -2,16 +2,18 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { db, Invoice, InvoiceItem } from "@/lib/db/db";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr } from "@/lib/format";
 import {
   FileSpreadsheet, FileText, CheckCircle2, AlertCircle,
   Building2, Users, LayoutList, TrendingUp, Download,
-  CalendarDays, Info, Printer, X, FileDown,
+  CalendarDays, Info, Printer, X, FileDown, Image as ImageIcon,
 } from "lucide-react";
 import { GSTReportDocument } from "@/components/GSTReportDocument";
+import { captureReceiptAsImage } from "@/lib/capture-receipt-image";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/gst")({ component: GSTPage });
 
@@ -41,6 +43,7 @@ type GSTTab = "summary" | "b2b" | "b2c" | "hsn" | "gstr3b" | "purchase";
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 function GSTPage() {
+  const t = useT();
   const reportRef = useRef<HTMLDivElement>(null);
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth()); // 0-indexed
@@ -48,13 +51,26 @@ function GSTPage() {
   const [filterMode, setFilterMode] = useState<"month" | "fy">("month");
   const [activeTab, setActiveTab] = useState<GSTTab>("summary");
   const [showReportModal, setShowReportModal] = useState(false);
+  const [isCapturingImg, setIsCapturingImg] = useState(false);
+  const [downloadedHTML, setDownloadedHTML] = useState(false);
 
   const storeQuery = useQuery({
     queryKey: ["local-gst-data"],
+    staleTime: 60_000,
     queryFn: async () => db.getStore(),
   });
 
   const store = storeQuery.data;
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && showReportModal) {
+        setShowReportModal(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showReportModal]);
 
   // ─── Date Filtering ──────────────────────────────────────────────────────
 
@@ -84,19 +100,38 @@ function GSTPage() {
     });
   }, [store, selectedMonth, selectedYear, filterMode]);
 
-  // ─── Classification ──────────────────────────────────────────────────────
+  // ─── Classification & Lookups ──────────────────────────────────────────────
 
-  const gstInvoices = filteredInvoices.filter(
-    (i) => i.invoice_type === "GST" || i.invoice_type === "MIXED"
-  );
+  const customerMap = useMemo(() => {
+    const map = new Map<string, any>();
+    store?.customers?.forEach((c) => map.set(c.id, c));
+    return map;
+  }, [store?.customers]);
 
-  const b2bInvoices = gstInvoices.filter((inv) => {
-    if (!inv.customer_id) return false;
-    const cust = store?.customers.find((c) => c.id === inv.customer_id);
-    return !!cust?.gst_number;
-  });
+  const inventoryMap = useMemo(() => {
+    const map = new Map<string, any>();
+    store?.inventory?.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [store?.inventory]);
 
-  const b2cInvoices = gstInvoices.filter((inv) => !b2bInvoices.includes(inv));
+  const gstInvoices = useMemo(() => {
+    return filteredInvoices.filter(
+      (i) => i.invoice_type === "GST" || i.invoice_type === "MIXED"
+    );
+  }, [filteredInvoices]);
+
+  const b2bInvoices = useMemo(() => {
+    return gstInvoices.filter((inv) => {
+      if (!inv.customer_id) return false;
+      const cust = customerMap.get(inv.customer_id);
+      return !!cust?.gst_number;
+    });
+  }, [gstInvoices, customerMap]);
+
+  const b2cInvoices = useMemo(() => {
+    const b2bSet = new Set(b2bInvoices.map((i) => i.id));
+    return gstInvoices.filter((inv) => !b2bSet.has(inv.id));
+  }, [gstInvoices, b2bInvoices]);
 
   // ─── Summary Totals ──────────────────────────────────────────────────────
 
@@ -129,7 +164,7 @@ function GSTPage() {
     }> = {};
 
     items.forEach((ii) => {
-      const prod = store.inventory.find((p) => p.id === ii.product_id);
+      const prod = inventoryMap.get(ii.product_id);
       const hsn = prod?.sku_code || prod?.barcode || "GENERAL";
       const desc = prod?.category || "Hardware & Electricals";
       const rate = Number(ii.tax_rate) || 18;
@@ -144,7 +179,7 @@ function GSTPage() {
     });
 
     return Object.values(map).sort((a, b) => b.taxableVal - a.taxableVal);
-  }, [store, gstInvoices]);
+  }, [store, gstInvoices, inventoryMap]);
 
   // ─── Tax Rate Breakdown ───────────────────────────────────────────────────
 
@@ -318,6 +353,171 @@ function GSTPage() {
     });
   }
 
+  function downloadGSTReportHTML() {
+    const data = buildReportData();
+    const INR_FMT = (n: number) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GST Compliance Report - ${data.periodLabel}</title>
+  <style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.5; color: #000; background: #fff; margin: 0; padding: 16px; }
+    .report-wrap { max-width: 210mm; margin: 0 auto; background: #fff; }
+    .header { display: flex; justify-content: space-between; border-bottom: 3px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; }
+    .shop-title { font-size: 16px; font-weight: 900; text-transform: uppercase; }
+    .shop-tag { font-size: 10px; font-weight: bold; color: #475569; text-transform: uppercase; }
+    .title-box { text-align: right; }
+    .report-title { font-size: 18px; font-weight: 900; letter-spacing: 1px; color: #0f172a; text-transform: uppercase; }
+    .report-sub { font-size: 12px; font-weight: bold; color: #1d4ed8; letter-spacing: 0.5px; }
+    .period-badge { display: inline-block; background: #0f172a; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-top: 4px; }
+    .decl-box { border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; background: #f8fafc; margin-bottom: 12px; font-size: 9px; color: #475569; }
+    .sec-title { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.08em; color: #1e293b; background: #f1f5f9; padding: 5px 10px; border-left: 4px solid #1e293b; margin: 14px 0 6px 0; }
+    .kpi-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .kpi-card { flex: 1 1 90px; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; background: #f8fafc; }
+    .kpi-label { font-size: 8.5px; text-transform: uppercase; color: #64748b; font-weight: bold; }
+    .kpi-val { font-size: 13px; font-weight: 900; font-family: monospace; color: #0f172a; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 9.5px; }
+    th { background: #1e293b; color: #fff; padding: 5px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #1e293b; }
+    td { padding: 4px 8px; border: 1px solid #e2e8f0; vertical-align: top; }
+    .mono { font-family: monospace; text-align: right; }
+    .foot { background: #f8fafc; font-weight: bold; font-family: monospace; text-align: right; }
+    .page-break { page-break-before: always; break-before: page; margin-top: 14px; }
+    .highlight-box { padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 10px; font-weight: bold; }
+    .footer { margin-top: 18px; padding-top: 10px; border-top: 2px solid #1e293b; display: flex; justify-content: space-between; font-size: 8.5px; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="report-wrap">
+    <div class="header">
+      <div>
+        <div class="shop-title">${data.shopName}</div>
+        <div class="shop-tag">${data.shopTagline}</div>
+        <div style="font-size: 10px; color: #334155; margin-top: 2px;">${data.shopAddress}</div>
+        <div style="font-size: 10px; font-weight: 600; margin-top: 2px;">Ph: ${data.shopPhone}</div>
+        <div style="font-size: 10px; font-weight: bold; margin-top: 1px;">GSTIN: <span style="color: #1d4ed8;">${data.shopGstin}</span></div>
+      </div>
+      <div class="title-box">
+        <div class="report-title">GST COMPLIANCE</div>
+        <div class="report-sub">GSTR-1 &amp; GSTR-3B REPORT</div>
+        <div class="period-badge">${data.periodLabel}</div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 4px;">Generated: ${data.generatedAt}</div>
+        <div style="font-size: 9px; color: #475569;">State: Tamil Nadu (Code 33)</div>
+      </div>
+    </div>
+
+    <div class="decl-box">
+      <strong>DECLARATION:</strong> This GST Compliance Report is auto-generated by Ponmani Agencies Retail Console for the period <strong>${data.periodLabel}</strong>. Place of Supply: <strong>Tamil Nadu (33)</strong>.
+    </div>
+
+    <div class="sec-title">Section 1 — Tax Summary at a Glance</div>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Total Invoices</div><div class="kpi-val">${data.totalInvoices}</div></div>
+      <div class="kpi-card"><div class="kpi-label">B2B (Registered)</div><div class="kpi-val">${data.b2bCount}</div></div>
+      <div class="kpi-card"><div class="kpi-label">B2C (Consumer)</div><div class="kpi-val">${data.b2cCount}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Taxable Turnover</div><div class="kpi-val" style="color: #065f46;">${INR_FMT(data.totalTaxable)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Output GST</div><div class="kpi-val" style="color: #1e40af;">${INR_FMT(data.totalOutputGST)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">ITC Available</div><div class="kpi-val" style="color: #92400e;">${INR_FMT(data.itcInput)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Net Tax Payable</div><div class="kpi-val" style="color: ${data.netTaxPayable > 0 ? '#991b1b' : '#065f46'};">${INR_FMT(data.netTaxPayable)}</div></div>
+    </div>
+
+    <div class="sec-title">Section 2 — Tax Liability Statement (GSTR-3B Summary)</div>
+    <table>
+      <thead>
+        <tr><th style="text-align: left;">Description</th><th style="text-align: right;">Taxable Value (₹)</th><th style="text-align: right;">IGST (₹)</th><th style="text-align: right;">CGST (₹)</th><th style="text-align: right;">SGST (₹)</th><th style="text-align: right;">Total Tax (₹)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>3.1(a) Outward Taxable Supplies</td><td class="mono">${INR_FMT(data.totalTaxable)}</td><td class="mono">₹0.00</td><td class="mono">${INR_FMT(data.cgstOutput)}</td><td class="mono">${INR_FMT(data.sgstOutput)}</td><td class="mono" style="font-weight: bold;">${INR_FMT(data.totalOutputGST)}</td></tr>
+        <tr><td>4A(i) ITC — Input Tax Credit (Purchases)</td><td class="mono">—</td><td class="mono">₹0.00</td><td class="mono" style="color: #b45309;">(${INR_FMT(data.itcInput / 2)})</td><td class="mono" style="color: #b45309;">(${INR_FMT(data.itcInput / 2)})</td><td class="mono" style="color: #b45309; font-weight: bold;">(${INR_FMT(data.itcInput)})</td></tr>
+        <tr style="background: #f0f9ff; font-weight: bold;"><td>5.1 Net Output Tax Liability</td><td class="mono">${INR_FMT(data.totalTaxable)}</td><td class="mono">₹0.00</td><td class="mono" style="color: #1d4ed8;">${INR_FMT(data.netTaxPayable / 2)}</td><td class="mono" style="color: #7c3aed;">${INR_FMT(data.netTaxPayable / 2)}</td><td class="mono" style="color: ${data.netTaxPayable > 0 ? '#991b1b' : '#065f46'}; font-weight: bold;">${INR_FMT(data.netTaxPayable)}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="highlight-box" style="background: ${data.netTaxPayable > 0 ? '#fef2f2' : '#f0fdf4'}; border: 1px solid ${data.netTaxPayable > 0 ? '#fecaca' : '#bbf7d0'}; color: ${data.netTaxPayable > 0 ? '#991b1b' : '#065f46'};">
+      ${data.netTaxPayable > 0 ? `⚠ NET TAX PAYABLE TO GOVERNMENT: ${INR_FMT(data.netTaxPayable)} (CGST: ${INR_FMT(data.netTaxPayable / 2)} + SGST: ${INR_FMT(data.netTaxPayable / 2)})` : '✓ NO NET TAX PAYABLE — Input Tax Credit (ITC) covers output tax liability for this period.'}
+    </div>
+
+    ${data.rateBreakup.length > 0 ? `
+      <div class="sec-title">Section 3 — Rate-wise Tax Breakup</div>
+      <table>
+        <thead><tr><th style="text-align: left;">GST Rate</th><th style="text-align: right;">Taxable Value (₹)</th><th style="text-align: right;">CGST (₹)</th><th style="text-align: right;">SGST (₹)</th><th style="text-align: right;">Total GST (₹)</th></tr></thead>
+        <tbody>
+          ${data.rateBreakup.map(r => `<tr><td style="font-weight: bold; color: #1d4ed8;">${r.rate}%</td><td class="mono">${INR_FMT(r.taxable)}</td><td class="mono" style="color: #1d4ed8;">${INR_FMT(r.cgst)}</td><td class="mono" style="color: #7c3aed;">${INR_FMT(r.sgst)}</td><td class="mono" style="font-weight: bold;">${INR_FMT(r.cgst + r.sgst)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    ` : ''}
+
+    <div class="page-break"></div>
+
+    <div class="sec-title">Section 4A — B2B Registered Dealer Invoices (${data.b2bCount})</div>
+    <table>
+      <thead><tr><th>#</th><th>GSTIN</th><th>Receiver Name</th><th>Invoice No.</th><th>Date</th><th style="text-align: right;">Taxable Value (₹)</th><th style="text-align: right;">CGST (₹)</th><th style="text-align: right;">SGST (₹)</th><th style="text-align: right;">Total (₹)</th></tr></thead>
+      <tbody>
+        ${data.b2bRows.length === 0 ? '<tr><td colspan="9" style="text-align: center; color: #64748b; font-style: italic; padding: 12px;">No B2B invoices in this period.</td></tr>' : data.b2bRows.map((r, i) => `<tr><td>${i + 1}</td><td style="font-family: monospace; font-weight: bold; color: #065f46;">${r.gstin}</td><td>${r.name}</td><td style="font-family: monospace; font-weight: bold; color: #1d4ed8;">${r.invoiceNo}</td><td style="font-family: monospace;">${r.date}</td><td class="mono">${INR_FMT(r.taxable)}</td><td class="mono" style="color: #1d4ed8;">${INR_FMT(r.cgst)}</td><td class="mono" style="color: #7c3aed;">${INR_FMT(r.sgst)}</td><td class="mono" style="font-weight: bold;">${INR_FMT(r.total)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="sec-title">Section 4B — B2C Consumer Sales Summary (${data.b2cCount})</div>
+    <table>
+      <thead><tr><th>Place of Supply</th><th>Tax Rate</th><th style="text-align: right;">Taxable Value (₹)</th><th style="text-align: right;">CGST (₹)</th><th style="text-align: right;">SGST (₹)</th><th style="text-align: right;">Total Tax (₹)</th></tr></thead>
+      <tbody>
+        ${data.rateBreakup.map(r => `<tr><td>33-Tamil Nadu</td><td style="font-weight: bold; color: #1d4ed8;">${r.rate}% GST</td><td class="mono">${INR_FMT(r.taxable)}</td><td class="mono" style="color: #1d4ed8;">${INR_FMT(r.cgst)}</td><td class="mono" style="color: #7c3aed;">${INR_FMT(r.sgst)}</td><td class="mono" style="font-weight: bold;">${INR_FMT(r.cgst + r.sgst)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="sec-title">Section 5 — HSN-wise Summary</div>
+    <table>
+      <thead><tr><th>#</th><th>HSN / SKU</th><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Rate %</th><th style="text-align: right;">Taxable Value (₹)</th><th style="text-align: right;">CGST (₹)</th><th style="text-align: right;">SGST (₹)</th></tr></thead>
+      <tbody>
+        ${data.hsnRows.length === 0 ? '<tr><td colspan="8" style="text-align: center; color: #64748b; font-style: italic; padding: 12px;">No HSN data.</td></tr>' : data.hsnRows.map((r, i) => `<tr><td>${i + 1}</td><td style="font-family: monospace; font-weight: bold; color: #1d4ed8;">${r.hsn}</td><td>${r.description}</td><td class="mono">${r.qty.toFixed(2)}</td><td class="mono">${r.rate}%</td><td class="mono">${INR_FMT(r.taxable)}</td><td class="mono" style="color: #1d4ed8;">${INR_FMT(r.cgst)}</td><td class="mono" style="color: #7c3aed;">${INR_FMT(r.sgst)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+
+    ${data.itcRows.length > 0 ? `
+      <div class="sec-title">Section 6 — Input Tax Credit (ITC) — Received Purchase Orders</div>
+      <table>
+        <thead><tr><th>#</th><th>PO Number</th><th>Vendor</th><th>Date</th><th style="text-align: right;">PO Value (₹)</th><th style="text-align: right;">ITC Claimable (₹)</th><th style="text-align: right;">CGST ITC (₹)</th><th style="text-align: right;">SGST ITC (₹)</th></tr></thead>
+        <tbody>
+          ${data.itcRows.map((r, i) => `<tr><td>${i + 1}</td><td style="font-family: monospace; font-weight: bold; color: #1d4ed8;">${r.poNo}</td><td>${r.vendor}</td><td style="font-family: monospace;">${r.date}</td><td class="mono">${INR_FMT(r.total)}</td><td class="mono" style="color: #92400e; font-weight: bold;">${INR_FMT(r.taxAmt)}</td><td class="mono" style="color: #1d4ed8;">${INR_FMT(r.taxAmt / 2)}</td><td class="mono" style="color: #7c3aed;">${INR_FMT(r.taxAmt / 2)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    ` : ''}
+
+    <div class="footer">
+      <div>
+        <div style="font-weight: bold; color: #0f172a;">HOW TO FILE:</div>
+        <div>1. Share this report with your Chartered Accountant (CA).</div>
+        <div>2. Use Excel export to upload to gst.gov.in.</div>
+        <div style="margin-top: 4px; color: #94a3b8;">Auto-generated by Ponmani Agencies Offline Console</div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-weight: bold; color: #0f172a;">AUTHORISED SIGNATORY</div>
+        <div style="margin-top: 24px; border-top: 1px solid #94a3b8; padding-top: 4px;">${data.shopName}</div>
+        <div>${data.shopGstin}</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `GST_Compliance_Report_${periodLabel.replace(/\s+/g, '_')}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setDownloadedHTML(true);
+    toast.success(`GST Compliance Report HTML downloaded!`);
+    setTimeout(() => setDownloadedHTML(false), 3000);
+  }
+
   // ─── Period Label ─────────────────────────────────────────────────────────
 
   const periodLabel = filterMode === "month"
@@ -337,7 +537,7 @@ function GSTPage() {
     <>
       <div className="p-6 space-y-5 print:hidden">
       <PageHeader
-        title="GST Compliance & Filing Center"
+        title={t("gst.title")}
         subtitle={`Tamil Nadu GST (State Code 33) — GSTR-1 & GSTR-3B Reports | ${store?.settings?.shop_gstin || "GSTIN not configured"}`}
         action={
           <div className="flex gap-2">
@@ -345,19 +545,13 @@ function GSTPage() {
               onClick={() => setShowReportModal(true)}
               className="h-10 px-4 rounded-md bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-2 transition shadow"
             >
-              <Printer className="h-4 w-4" /> Generate Report
+              <Printer className="h-4 w-4" /> {t("gst.generate")}
             </button>
             <button
               onClick={exportGSTR1Report}
               className="h-10 px-4 rounded-md bg-primary text-primary-foreground font-bold text-xs flex items-center gap-2 hover:opacity-90 transition shadow"
             >
-              <FileSpreadsheet className="h-4 w-4" /> Export Excel
-            </button>
-            <button
-              onClick={exportGSTWorkbook}
-              className="h-10 px-4 rounded-md bg-secondary border border-border text-foreground text-xs font-semibold flex items-center gap-2 hover:bg-muted transition"
-            >
-              <Download className="h-4 w-4" /> All Periods
+              <FileSpreadsheet className="h-4 w-4" /> {t("common.export")}
             </button>
           </div>
         }
@@ -366,20 +560,20 @@ function GSTPage() {
       {/* ── Period Selector ─────────────────────────────────────────────── */}
       <div className="card-surface p-4 flex flex-wrap gap-3 items-center">
         <CalendarDays className="h-4 w-4 text-primary shrink-0" />
-        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Filter Period:</span>
+        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{t("gst.period")}:</span>
 
         <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
           <button
             onClick={() => setFilterMode("month")}
             className={`h-7 px-3 rounded text-xs font-semibold transition ${filterMode === "month" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            Monthly
+            {t("gst.period.monthly")}
           </button>
           <button
             onClick={() => setFilterMode("fy")}
             className={`h-7 px-3 rounded text-xs font-semibold transition ${filterMode === "fy" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
-            Financial Year
+            {t("reports.thisYear")}
           </button>
         </div>
 
@@ -416,12 +610,12 @@ function GSTPage() {
       {/* ── Top KPI Cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {[
-          { label: "Taxable Turnover", val: allGSTTotals.taxable, color: "border-l-emerald-500", text: "text-emerald-400" },
-          { label: "Output GST Collected", val: allGSTTotals.tax, color: "border-l-primary", text: "text-primary" },
-          { label: "CGST Output", val: allGSTTotals.tax / 2, color: "border-l-blue-500", text: "text-blue-400" },
-          { label: "SGST Output", val: allGSTTotals.tax / 2, color: "border-l-purple-500", text: "text-purple-400" },
-          { label: "ITC (Input Tax Credit)", val: itcTotal, color: "border-l-amber-500", text: "text-amber-400" },
-          { label: "Net Tax Payable", val: netTaxLiability, color: netTaxLiability > 0 ? "border-l-red-500" : "border-l-emerald-400", text: netTaxLiability > 0 ? "text-red-400" : "text-emerald-400" },
+          { label: t("gst.col.taxable"), val: allGSTTotals.taxable, color: "border-l-emerald-500", text: "text-emerald-400" },
+          { label: t("gst.summary.outputTax"), val: allGSTTotals.tax, color: "border-l-primary", text: "text-primary" },
+          { label: t("pos.breakdown.cgst"), val: allGSTTotals.tax / 2, color: "border-l-blue-500", text: "text-blue-400" },
+          { label: t("pos.breakdown.sgst"), val: allGSTTotals.tax / 2, color: "border-l-purple-500", text: "text-purple-400" },
+          { label: t("gst.summary.inputTax"), val: itcTotal, color: "border-l-amber-500", text: "text-amber-400" },
+          { label: t("gst.summary.netPayable"), val: netTaxLiability, color: netTaxLiability > 0 ? "border-l-red-500" : "border-l-emerald-400", text: netTaxLiability > 0 ? "text-red-400" : "text-emerald-400" },
         ].map((card) => (
           <div key={card.label} className={`card-surface p-3 border-l-4 ${card.color}`}>
             <div className="text-[10px] text-muted-foreground mb-1 leading-tight">{card.label}</div>
@@ -873,45 +1067,104 @@ function GSTPage() {
 
       {/* ── GST Report Print Modal ──────────────────────────────────────── */}
       {showReportModal && store && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col print:bg-white print:inset-auto print:static print:block"
-          onClick={() => setShowReportModal(false)}
-        >
-          {/* Toolbar */}
-          <div className="flex items-center gap-3 px-5 py-3 bg-card border-b border-border shrink-0 print:hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-emerald-400" />
-              <div>
-                <div className="font-bold text-sm">GST Compliance Report</div>
-                <div className="text-xs text-muted-foreground font-mono">{periodLabel}</div>
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col print:hidden"
+            onClick={() => setShowReportModal(false)}
+          >
+            {/* Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 bg-card border-b border-border shrink-0" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold">
+                  <FileText className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="font-bold text-sm text-foreground flex items-center gap-2">
+                    GST Compliance Report
+                    <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-primary/20 text-primary border border-primary/30">
+                      GSTR-1 &amp; 3B
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono">{periodLabel}</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); exportGSTR1Report(); }}
+                  className="h-9 px-3 rounded-lg bg-secondary hover:bg-muted text-foreground text-xs font-bold flex items-center gap-1.5 border border-border transition"
+                  title="Export full Excel workbook for CA & GST Portal"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-400" /> Excel Sheet
+                </button>
+
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!reportRef.current) return;
+                    setIsCapturingImg(true);
+                    try {
+                      const ok = await captureReceiptAsImage(reportRef.current, `GST_Report_${periodLabel.replace(/\s+/g, '_')}.png`);
+                      if (ok) {
+                        toast.success("GST Report image copied to clipboard & downloaded!");
+                      } else {
+                        toast.error("Failed to generate image.");
+                      }
+                    } catch (err: any) {
+                      toast.error("Error generating image: " + err.message);
+                    } finally {
+                      setIsCapturingImg(false);
+                    }
+                  }}
+                  disabled={isCapturingImg}
+                  className="h-9 px-3 rounded-lg bg-secondary hover:bg-muted text-foreground text-xs font-bold flex items-center gap-1.5 border border-border transition"
+                  title="Save high-resolution PNG image of the report"
+                >
+                  <ImageIcon className="h-4 w-4 text-blue-400" /> {isCapturingImg ? "Capturing..." : "Save Image (PNG)"}
+                </button>
+
+                <button
+                  onClick={(e) => { e.stopPropagation(); downloadGSTReportHTML(); }}
+                  className="h-9 px-3 rounded-lg bg-secondary hover:bg-muted text-foreground text-xs font-bold flex items-center gap-1.5 border border-border transition"
+                  title="Save standalone offline HTML document"
+                >
+                  <Download className="h-4 w-4 text-purple-400" /> {downloadedHTML ? "Saved!" : "Save HTML"}
+                </button>
+
+                <button
+                  onClick={(e) => { e.stopPropagation(); window.print(); }}
+                  className="h-9 px-4 rounded-lg bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow transition"
+                  title="Print clean A4 document or Save as PDF in browser"
+                >
+                  <Printer className="h-4 w-4" /> Print / Save as PDF
+                </button>
+
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="h-9 w-9 rounded-lg bg-secondary border border-border text-muted-foreground hover:text-foreground flex items-center justify-center transition"
+                  title="Close report modal (Esc)"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             </div>
-            <div className="ml-auto flex gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); window.print(); }}
-                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow hover:opacity-90 transition"
-              >
-                <Printer className="h-4 w-4" /> Print / Save as PDF
-              </button>
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="h-9 w-9 rounded-lg bg-secondary border border-border text-muted-foreground hover:text-foreground flex items-center justify-center transition"
-              >
-                <X className="h-4 w-4" />
-              </button>
+
+            {/* Scrollable A4 preview on clean light background */}
+            <div
+              className="flex-1 overflow-y-auto overflow-x-auto flex justify-center py-8 px-4 bg-slate-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div ref={reportRef} className="shadow-xl rounded bg-white">
+                <GSTReportDocument data={buildReportData()} />
+              </div>
             </div>
           </div>
 
-          {/* Scrollable A4 preview */}
-          <div
-            className="flex-1 overflow-y-auto overflow-x-auto flex justify-center py-8 px-4 bg-zinc-900/60 print:bg-white print:p-0 print:overflow-visible print:block"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div ref={reportRef} className="shadow-2xl print:shadow-none">
-              <GSTReportDocument data={buildReportData()} />
-            </div>
+          {/* Dedicated Clean Print Container for Browser Print / Save as PDF */}
+          <div className="hidden print:block print:w-full print:bg-white print:m-0 print:p-0">
+            <GSTReportDocument data={buildReportData()} />
           </div>
-        </div>
+        </>
       )}
     </>
   );

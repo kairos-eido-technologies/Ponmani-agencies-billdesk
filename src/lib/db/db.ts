@@ -23,6 +23,7 @@ export interface InventoryItem {
   unit: string;
   cost_price: number;
   selling_price: number;
+  mrp?: number;
   stock_qty: number;
   godown_qty: number;
   moq: number;
@@ -119,6 +120,7 @@ export interface InvoiceItem {
   product_name: string;
   qty: number;
   unit_price: number;
+  mrp?: number;
   tax_rate: number;
   total_price: number;
   is_return?: boolean;
@@ -136,6 +138,8 @@ export interface ServiceTicket {
   issue_description: string;
   estimated_cost: number;
   final_cost: number;
+  advance_paid?: number;
+  assigned_technician?: string;
   status: 'Intake' | 'In Progress' | 'Ready' | 'Delivered';
   created_at: string;
   updated_at: string;
@@ -320,12 +324,15 @@ class PonmaniDatabase extends Dexie {
 
 class OfflineDB {
   private memoryData: DBStore;
+  private barcodeMap = new Map<string, InventoryItem>();
+  private idMap = new Map<string, InventoryItem>();
   private dexieDb!: PonmaniDatabase;
   public isLoaded = false;
   public loadPromise: Promise<void>;
 
   constructor() {
     this.memoryData = { ...INITIAL_SEED };
+    this.rebuildInventoryMaps();
     
     if (typeof window === 'undefined') {
       this.isLoaded = true;
@@ -333,6 +340,21 @@ class OfflineDB {
     } else {
       this.dexieDb = new PonmaniDatabase();
       this.loadPromise = this.loadFromIndexedDB();
+    }
+  }
+
+  public rebuildInventoryMaps() {
+    this.barcodeMap.clear();
+    this.idMap.clear();
+    const inv = this.memoryData.inventory || [];
+    for (let i = 0; i < inv.length; i++) {
+      const item = inv[i];
+      if (item.barcode) {
+        this.barcodeMap.set(item.barcode.trim(), item);
+      }
+      if (item.id) {
+        this.idMap.set(item.id, item);
+      }
     }
   }
 
@@ -371,10 +393,8 @@ class OfflineDB {
           backups_log: store.backups_log || [],
           settings: { ...INITIAL_SEED.settings, ...store.settings },
         };
+        this.rebuildInventoryMaps();
         this.isLoaded = true;
-
-        // Sync local IndexedDB fallback cache in background
-        this.syncLocalStoreToIndexedDB(this.memoryData).catch(console.error);
         return;
       }
     } catch (e) {
@@ -444,6 +464,7 @@ class OfflineDB {
       console.error('Failed loading IndexedDB database, falling back to seed:', err);
       this.memoryData = { ...INITIAL_SEED };
     } finally {
+      this.rebuildInventoryMaps();
       this.isLoaded = true;
     }
   }
@@ -529,8 +550,7 @@ class OfflineDB {
           backups_log: store.backups_log || [],
           settings: { ...INITIAL_SEED.settings, ...store.settings },
         };
-        
-        await this.syncLocalStoreToIndexedDB(this.memoryData);
+        this.rebuildInventoryMaps();
         isSyncingFromSQLite = false;
       }
     } catch (e) {
@@ -580,6 +600,80 @@ class OfflineDB {
       console.error('Failed resetting Dexie database:', err);
     }
     return this.memoryData;
+  }
+
+  public async clearTransactionsOnly(): Promise<void> {
+    try {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_transactions' }),
+      });
+    } catch (e) {
+      console.warn('[DB] SQLite clear_transactions failed:', e);
+    }
+
+    await Promise.all([
+      this.dexieDb.invoices.clear(),
+      this.dexieDb.invoice_items.clear(),
+      this.dexieDb.service_tickets.clear(),
+      this.dexieDb.scrap_entries.clear(),
+      this.dexieDb.godown_transfers.clear(),
+      this.dexieDb.purchase_orders.clear(),
+      this.dexieDb.purchase_items.clear(),
+      this.dexieDb.loyalty_ledger.clear(),
+    ]);
+
+    await this.pullServerUpdates();
+  }
+
+  public async factoryResetStore(options?: {
+    shop_name?: string;
+    shop_address?: string;
+    shop_phone?: string;
+    shop_gstin?: string;
+    receipt_header_note?: string;
+    receipt_footer_note?: string;
+    keepProducts?: boolean;
+  }): Promise<void> {
+    try {
+      await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'factory_reset', options }),
+      });
+    } catch (e) {
+      console.warn('[DB] SQLite factory_reset failed:', e);
+    }
+
+    const clearPromises = [
+      this.dexieDb.invoices.clear(),
+      this.dexieDb.invoice_items.clear(),
+      this.dexieDb.service_tickets.clear(),
+      this.dexieDb.scrap_entries.clear(),
+      this.dexieDb.godown_transfers.clear(),
+      this.dexieDb.purchase_orders.clear(),
+      this.dexieDb.purchase_items.clear(),
+      this.dexieDb.loyalty_ledger.clear(),
+      this.dexieDb.customers.clear(),
+      this.dexieDb.vendors.clear(),
+      this.dexieDb.backups_log.clear(),
+    ];
+
+    if (!options?.keepProducts) {
+      clearPromises.push(this.dexieDb.inventory.clear());
+    }
+
+    await Promise.all(clearPromises);
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('ponmani_simple_shopping_list_v2');
+        localStorage.removeItem('ponmani_restock_shopping_list_v1');
+      } catch (e) {}
+    }
+
+    await this.pullServerUpdates();
   }
 
   public async wipeAndSeedUtensils(onProgress?: (msg: string) => void): Promise<void> {
@@ -777,23 +871,49 @@ class OfflineDB {
     }
   }
 
+  public deleteUser(userIdOrUsername: string): boolean {
+    const idx = this.memoryData.users.findIndex(
+      (u) => u.id === userIdOrUsername || u.username.toLowerCase() === userIdOrUsername.toLowerCase()
+    );
+    if (idx >= 0) {
+      const u = this.memoryData.users[idx];
+      this.memoryData.users.splice(idx, 1);
+      this.dexieDb.users.delete(u.id).catch(console.error);
+      return true;
+    }
+    return false;
+  }
+
   // Inventory
   public getInventory(): InventoryItem[] {
     return this.memoryData.inventory;
   }
 
   public getProductByBarcode(barcode: string): InventoryItem | undefined {
+    if (!barcode) return undefined;
     const clean = barcode.trim();
-    return this.memoryData.inventory.find((i) => i.barcode === clean);
+    return this.barcodeMap.get(clean);
+  }
+
+  public getProductById(id: string): InventoryItem | undefined {
+    if (!id) return undefined;
+    return this.idMap.get(id);
   }
 
   public saveInventoryItem(item: Partial<InventoryItem> & { name: string; selling_price: number }) {
     if (item.id) {
       const idx = this.memoryData.inventory.findIndex((i) => i.id === item.id);
       if (idx >= 0) {
-        const updated = { ...this.memoryData.inventory[idx], ...item };
+        const existing = this.memoryData.inventory[idx];
+        const updated = {
+          ...existing,
+          ...item,
+          mrp: item.mrp !== undefined && item.mrp !== null ? Number(item.mrp) : existing.mrp,
+        };
         this.memoryData.inventory[idx] = updated;
         this.dexieDb.inventory.put(updated).catch(console.error);
+        if (updated.barcode) this.barcodeMap.set(updated.barcode.trim(), updated);
+        this.idMap.set(updated.id, updated);
       }
     } else {
       const newItem: InventoryItem = {
@@ -804,6 +924,7 @@ class OfflineDB {
         unit: item.unit || 'Piece',
         cost_price: Number(item.cost_price) || 0,
         selling_price: Number(item.selling_price) || 0,
+        mrp: item.mrp !== undefined && item.mrp !== null ? Number(item.mrp) : 0,
         stock_qty: Number(item.stock_qty) || 0,
         godown_qty: Number(item.godown_qty) || 0,
         moq: Number(item.moq) || 1,
@@ -815,18 +936,25 @@ class OfflineDB {
       };
       this.memoryData.inventory.unshift(newItem);
       this.dexieDb.inventory.add(newItem).catch(console.error);
+      if (newItem.barcode) this.barcodeMap.set(newItem.barcode.trim(), newItem);
+      this.idMap.set(newItem.id, newItem);
     }
   }
 
   public deleteInventoryItem(id: string) {
+    const item = this.idMap.get(id);
+    if (item?.barcode) {
+      this.barcodeMap.delete(item.barcode.trim());
+    }
+    this.idMap.delete(id);
     this.memoryData.inventory = this.memoryData.inventory.filter((i) => i.id !== id);
     this.dexieDb.inventory.delete(id).catch(console.error);
   }
 
   public bulkImportInventory(items: Partial<InventoryItem>[]): { success: boolean; count: number; errors: string[] } {
     const errors: string[] = [];
-    const barcodesSeen = new Set(this.memoryData.inventory.map((i) => i.barcode));
     const validated: InventoryItem[] = [];
+    const tempBarcodes = new Set<string>();
 
     for (let i = 0; i < items.length; i++) {
       const raw = items[i];
@@ -835,11 +963,11 @@ class OfflineDB {
         continue;
       }
       const barcode = raw.barcode?.toString().trim() || ('PMA' + Math.floor(100000 + Math.random() * 900000));
-      if (barcodesSeen.has(barcode)) {
+      if (this.barcodeMap.has(barcode) || tempBarcodes.has(barcode)) {
         errors.push(`Row ${i + 1}: Duplicate barcode ${barcode}`);
         continue;
       }
-      barcodesSeen.add(barcode);
+      tempBarcodes.add(barcode);
 
       validated.push({
         id: 'prod-' + Date.now() + '-' + i,
@@ -849,6 +977,7 @@ class OfflineDB {
         unit: raw.unit || 'Piece',
         cost_price: Number(raw.cost_price) || 0,
         selling_price: Number(raw.selling_price) || 0,
+        mrp: raw.mrp !== undefined && raw.mrp !== null ? Number(raw.mrp) : 0,
         stock_qty: Number(raw.stock_qty) || 0,
         godown_qty: Number(raw.godown_qty) || 0,
         moq: Number(raw.moq) || 1,
@@ -865,7 +994,20 @@ class OfflineDB {
     }
 
     this.memoryData.inventory.unshift(...validated);
-    this.dexieDb.inventory.bulkAdd(validated).catch(console.error);
+    for (const item of validated) {
+      if (item.barcode) this.barcodeMap.set(item.barcode.trim(), item);
+      this.idMap.set(item.id, item);
+    }
+    
+    // Batch Dexie writes in chunks of 2,000 to prevent memory lockup
+    const BATCH_SIZE = 2000;
+    (async () => {
+      for (let i = 0; i < validated.length; i += BATCH_SIZE) {
+        const batch = validated.slice(i, i + BATCH_SIZE);
+        await this.dexieDb.inventory.bulkAdd(batch).catch(console.error);
+      }
+    })();
+
     return { success: true, count: validated.length, errors: [] };
   }
 
@@ -922,10 +1064,28 @@ class OfflineDB {
   }
 
   public getPurchaseOrders(): { order: PurchaseOrder; items: PurchaseItem[] }[] {
-    return this.memoryData.purchase_orders.map((po) => ({
-      order: po,
-      items: this.memoryData.purchase_items.filter((pi) => pi.po_id === po.id),
-    }));
+    const itemsMap = new Map<string, PurchaseItem[]>();
+    const allItems = this.memoryData.purchase_items || [];
+    for (let i = 0; i < allItems.length; i++) {
+      const pi = allItems[i];
+      if (pi.po_id) {
+        let arr = itemsMap.get(pi.po_id);
+        if (!arr) {
+          arr = [];
+          itemsMap.set(pi.po_id, arr);
+        }
+        arr.push(pi);
+      }
+    }
+
+    const allOrders = this.memoryData.purchase_orders || [];
+    const list = new Array(allOrders.length);
+    for (let i = 0; i < allOrders.length; i++) {
+      const po = allOrders[i];
+      const items = itemsMap.get(po.id) || [];
+      list[i] = { order: po, items };
+    }
+    return list;
   }
 
   public getPurchaseOrder(id: string): { order: PurchaseOrder; items: PurchaseItem[] } | null {
@@ -1104,6 +1264,7 @@ class OfflineDB {
       qty: number;
       cost_price: number;
       selling_price: number;
+      mrp?: number;
       shop_qty: number;
       godown_qty: number;
     }[]
@@ -1137,6 +1298,9 @@ class OfflineDB {
         if (Number(alloc.selling_price) > 0) {
           inv.selling_price = Number(alloc.selling_price);
         }
+        if (alloc.mrp !== undefined && alloc.mrp !== null) {
+          inv.mrp = Number(alloc.mrp);
+        }
         this.dexieDb.inventory.put(inv).catch(console.error);
         postRowToSQLite('upsert', 'inventory', inv);
       } else {
@@ -1148,6 +1312,7 @@ class OfflineDB {
           unit: 'Pcs',
           cost_price: Number(alloc.cost_price) || 0,
           selling_price: Number(alloc.selling_price) || Number(alloc.cost_price) * 1.25,
+          mrp: alloc.mrp !== undefined && alloc.mrp !== null ? Number(alloc.mrp) : 0,
           stock_qty: Number(alloc.shop_qty) || 0,
           godown_qty: Number(alloc.godown_qty) || 0,
           moq: 1,
@@ -1247,13 +1412,28 @@ class OfflineDB {
 
   // Invoices & POS
   public getInvoices(): { invoice: Invoice; items: InvoiceItem[] }[] {
-    const list = this.memoryData.invoices.map((inv) => ({
-      invoice: inv,
-      items: this.memoryData.invoice_items.filter(
-        (ii) => ii.invoice_id === inv.id || ii.invoice_id === inv.invoice_number
-      ),
-    }));
-    return list.sort((a, b) => new Date(b.invoice.created_at).getTime() - new Date(a.invoice.created_at).getTime());
+    const itemsMap = new Map<string, InvoiceItem[]>();
+    const allItems = this.memoryData.invoice_items || [];
+    for (let i = 0; i < allItems.length; i++) {
+      const ii = allItems[i];
+      if (ii.invoice_id) {
+        let arr = itemsMap.get(ii.invoice_id);
+        if (!arr) {
+          arr = [];
+          itemsMap.set(ii.invoice_id, arr);
+        }
+        arr.push(ii);
+      }
+    }
+
+    const allInvoices = this.memoryData.invoices || [];
+    const list = new Array(allInvoices.length);
+    for (let i = 0; i < allInvoices.length; i++) {
+      const inv = allInvoices[i];
+      const items = itemsMap.get(inv.id) || itemsMap.get(inv.invoice_number) || [];
+      list[i] = { invoice: inv, items };
+    }
+    return list;
   }
 
   public getInvoice(idOrNumber: string): { invoice: Invoice; items: InvoiceItem[] } | null {
@@ -1277,7 +1457,7 @@ class OfflineDB {
     exchange_notes?: string;
     payment_method: 'CASH' | 'UPI' | 'CARD' | 'CREDIT';
     loyalty_points_redeemed?: number;
-    items: { product_id: string; barcode: string; product_name: string; qty: number; unit_price: number; tax_rate: number }[];
+    items: { product_id: string; barcode: string; product_name: string; qty: number; unit_price: number; tax_rate: number; mrp?: number }[];
   }): Promise<Invoice> {
     const invId = 'inv-' + Date.now();
     const currentYear = new Date().getFullYear();
@@ -1305,6 +1485,10 @@ class OfflineDB {
         invProd.stock_qty = Math.max(0, invProd.stock_qty - item.qty);
       }
 
+      const itemMrp = item.mrp && item.mrp > 0
+        ? Number(item.mrp)
+        : (invProd?.mrp && invProd.mrp > 0 ? Number(invProd.mrp) : Number(invProd?.selling_price || item.unit_price));
+
       return {
         id: 'ii-' + Math.random().toString(36).substr(2, 9),
         invoice_id: invId,
@@ -1313,6 +1497,7 @@ class OfflineDB {
         product_name: item.product_name,
         qty: item.qty,
         unit_price: item.unit_price,
+        mrp: itemMrp,
         tax_rate: item.tax_rate,
         total_price: lineSubtotal,
       };
@@ -1432,7 +1617,7 @@ class OfflineDB {
     exchange_amount?: number;
     exchange_notes?: string;
     payment_method: 'CASH' | 'UPI' | 'CARD' | 'CREDIT';
-    items: { id?: string; product_id: string; barcode: string; product_name: string; qty: number; unit_price: number; tax_rate: number }[];
+    items: { id?: string; product_id: string; barcode: string; product_name: string; qty: number; unit_price: number; tax_rate: number; mrp?: number }[];
   }) {
     const invoice = this.memoryData.invoices.find((i) => i.id === invoiceId);
     if (!invoice) throw new Error("Invoice not found in memory");
@@ -1464,6 +1649,10 @@ class OfflineDB {
         prod.stock_qty = Math.max(0, prod.stock_qty - item.qty);
       }
 
+      const itemMrp = item.mrp && item.mrp > 0
+        ? Number(item.mrp)
+        : (prod?.mrp && prod.mrp > 0 ? Number(prod.mrp) : Number(prod?.selling_price || item.unit_price));
+
       return {
         id: item.id || ('ii-' + Math.random().toString(36).substr(2, 9)),
         invoice_id: invoiceId,
@@ -1472,6 +1661,7 @@ class OfflineDB {
         product_name: item.product_name,
         qty: item.qty,
         unit_price: item.unit_price,
+        mrp: itemMrp,
         tax_rate: item.tax_rate,
         total_price: lineSubtotal,
       };
@@ -1589,7 +1779,11 @@ class OfflineDB {
       serial_number: serialNo,
       issue_description: ticket.issue_description || '',
       estimated_cost: Number(ticket.estimated_cost) || 0,
-      final_cost: Number(ticket.final_cost) || Number(ticket.estimated_cost) || 0,
+      final_cost: ticket.final_cost !== undefined && ticket.final_cost !== null && !isNaN(Number(ticket.final_cost))
+        ? Number(ticket.final_cost)
+        : (Number(ticket.estimated_cost) || 0),
+      advance_paid: Number(ticket.advance_paid) || 0,
+      assigned_technician: ticket.assigned_technician || '',
       status: ticket.status || 'Intake',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

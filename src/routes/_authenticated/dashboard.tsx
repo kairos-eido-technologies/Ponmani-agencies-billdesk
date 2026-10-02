@@ -5,14 +5,17 @@ import { inr, qty } from "@/lib/format";
 import { Package, Receipt, Users, AlertTriangle, Wrench, Recycle, ShoppingBag, ArrowUpRight } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { Link } from "@tanstack/react-router";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
 function Dashboard() {
+  const t = useT();
   const stats = useQuery({
     queryKey: ["local-dashboard-stats"],
+    staleTime: 60_000,
     queryFn: async () => {
       const store = db.getStore();
       const invoices = store.invoices;
@@ -57,36 +60,36 @@ function Dashboard() {
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        title="Store Terminal Dashboard"
-        subtitle="Ponmani Agencies Hardware & Electronics — Real-time On-Premise Metrics"
+        title={t("dashboard.title")}
+        subtitle={t("dashboard.subtitle")}
         action={
           <Link
             to="/pos"
             className="h-9 px-4 rounded-md bg-primary text-primary-foreground font-semibold text-xs flex items-center gap-1 hover:accent-glow transition"
           >
-            Open POS Terminal <ArrowUpRight className="h-4 w-4" />
+            {t("dashboard.openPOS")} <ArrowUpRight className="h-4 w-4" />
           </Link>
         }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <KPI label="Total Sales Revenue" value={inr(data?.totalSales)} icon={Receipt} accent />
-        <KPI label="Invoices Issued" value={qty(data?.invoiceCount)} icon={Receipt} />
-        <KPI label="Active Catalog Items" value={qty(data?.productCount)} icon={Package} />
-        <KPI label="Registered Customers" value={qty(data?.customerCount)} icon={Users} />
+        <KPI label={t("dashboard.kpi.totalSales")} value={inr(data?.totalSales)} icon={Receipt} accent />
+        <KPI label={t("dashboard.kpi.invoices")} value={qty(data?.invoiceCount)} icon={Receipt} />
+        <KPI label={t("dashboard.kpi.catalog")} value={qty(data?.productCount)} icon={Package} />
+        <KPI label={t("dashboard.kpi.customers")} value={qty(data?.customerCount)} icon={Users} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card-surface p-4 border-l-4 border-l-amber-500">
-          <div className="text-xs text-muted-foreground mb-1">Low Stock Alerts</div>
-          <div className="text-xl font-bold font-mono text-amber-400">{data?.lowStock.length ?? 0} Products</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("dashboard.lowStock")}</div>
+          <div className="text-xl font-bold font-mono text-amber-400">{data?.lowStock.length ?? 0} {t("dashboard.lowStock.products")}</div>
         </div>
         <div className="card-surface p-4 border-l-4 border-l-blue-500">
-          <div className="text-xs text-muted-foreground mb-1">Active Service Tickets</div>
-          <div className="text-xl font-bold font-mono text-blue-400">{data?.pendingServices ?? 0} Tickets</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("dashboard.serviceTickets")}</div>
+          <div className="text-xl font-bold font-mono text-blue-400">{data?.pendingServices ?? 0} {t("dashboard.serviceTickets.count")}</div>
         </div>
         <div className="card-surface p-4 border-l-4 border-l-emerald-500">
-          <div className="text-xs text-muted-foreground mb-1">Scrap Buying Payout</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("dashboard.scrapPayout")}</div>
           <div className="text-xl font-bold font-mono text-emerald-400">{inr(data?.totalScrapPayout)}</div>
         </div>
       </div>
@@ -94,8 +97,8 @@ function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="card-surface p-4 lg:col-span-2">
           <div className="text-sm font-medium mb-3 flex items-center justify-between">
-            <span>Daily Sales Trend (Last 7 Days)</span>
-            <span className="text-xs text-muted-foreground font-mono">Local DB</span>
+            <span>{t("dashboard.chart.title")}</span>
+            <span className="text-xs text-muted-foreground font-mono">{t("dashboard.chart.localDB")}</span>
           </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -112,7 +115,7 @@ function Dashboard() {
                   }}
                   formatter={(val: any) => [`₹${val}`, 'Revenue']}
                 />
-                <Bar dataKey="v" fill="oklch(0.72 0.16 160)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="v" fill="oklch(0.72 0.16 160)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -120,7 +123,7 @@ function Dashboard() {
 
         <div className="card-surface p-4">
           <div className="flex items-center gap-2 text-sm font-medium mb-3 text-amber-400">
-            <AlertTriangle className="h-4 w-4" /> Low Stock & MOQ Alerts ({data?.lowStock.length ?? 0})
+            <AlertTriangle className="h-4 w-4" /> {t("dashboard.lowStockAlert")} ({data?.lowStock.length ?? 0})
           </div>
           <div className="space-y-2 max-h-64 overflow-auto pr-1">
             {(data?.lowStock ?? []).map((p) => (
@@ -135,7 +138,7 @@ function Dashboard() {
               </div>
             ))}
             {data && data.lowStock.length === 0 && (
-              <div className="text-xs text-muted-foreground py-10 text-center">All inventory stock levels optimal.</div>
+              <div className="text-xs text-muted-foreground py-10 text-center">{t("dashboard.allOptimal")}</div>
             )}
           </div>
         </div>

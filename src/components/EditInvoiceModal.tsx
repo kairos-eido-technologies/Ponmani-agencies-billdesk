@@ -34,6 +34,7 @@ export function EditInvoiceModal({
       product_name: it.product_name,
       qty: it.qty,
       unit_price: it.unit_price,
+      mrp: it.mrp,
       tax_rate: it.tax_rate,
       total_price: it.total_price,
     }))
@@ -78,6 +79,7 @@ export function EditInvoiceModal({
           product_name: p.name,
           qty: 1,
           unit_price: Number(p.selling_price),
+          mrp: Number(p.mrp || p.selling_price),
           tax_rate: Number(p.gst_rate),
           total_price: Number(p.selling_price),
         },
@@ -147,6 +149,7 @@ export function EditInvoiceModal({
           product_name: l.product_name,
           qty: Number(l.qty),
           unit_price: Number(l.unit_price),
+          mrp: l.mrp !== undefined && l.mrp !== null ? Number(l.mrp) : undefined,
           tax_rate: Number(l.tax_rate),
         })),
       });

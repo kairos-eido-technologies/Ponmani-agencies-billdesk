@@ -2,27 +2,37 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { db } from "@/lib/db/db";
 import { ExcelEngine } from "@/lib/excel/excel-engine";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { qty } from "@/lib/format";
 import { Warehouse, ArrowLeftRight, FileSpreadsheet, Plus, X, ArrowRight, Search } from "lucide-react";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/godown")({ component: GodownPage });
 
 function GodownPage() {
+  const t = useT();
   const qc = useQueryClient();
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState<"ALL" | "GODOWN_ONLY" | "LOW_STOCK">("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterMode]);
 
   const inventory = useQuery({
     queryKey: ["local-godown-inventory"],
+    staleTime: 60_000,
     queryFn: async () => db.getInventory(),
   });
 
   const transfers = useQuery({
     queryKey: ["local-godown-transfers"],
+    staleTime: 60_000,
     queryFn: async () => db.getGodownTransfers(),
   });
 
@@ -44,6 +54,11 @@ function GodownPage() {
     return true;
   });
 
+  const totalItemsCount = filteredItems.length;
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(totalItemsCount / pageSize) || 1;
+  const activePage = Math.min(currentPage, totalPages);
+  const displayedItems = pageSize === -1 ? filteredItems : filteredItems.slice((activePage - 1) * pageSize, activePage * pageSize);
+
   function exportGodownExcel() {
     const data = allItems.map((p) => ({
       Barcode: p.barcode,
@@ -61,21 +76,21 @@ function GodownPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Godown & Dual-Location Stock Management"
-        subtitle="Stock distribution between Main Godown Warehouse and Shop Counter"
+        title={t("godown.title")}
+        subtitle={t("godown.subtitle")}
         action={
           <div className="flex gap-2">
             <button
               onClick={exportGodownExcel}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> Export Godown Report
+              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> {t("godown.exportExcel")}
             </button>
             <button
               onClick={() => setShowTransferModal(true)}
               className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:accent-glow transition"
             >
-              <ArrowLeftRight className="h-4 w-4" /> Transfer Stock
+              <ArrowLeftRight className="h-4 w-4" /> {t("godown.transferToShop")}
             </button>
           </div>
         }
@@ -84,19 +99,19 @@ function GodownPage() {
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card-surface p-4 border-l-4 border-l-primary">
-          <div className="text-xs text-muted-foreground mb-1">Shop Floor Stock</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("godown.kpi.inShop")}</div>
           <div className="text-2xl font-bold font-mono text-primary">
             {qty(allItems.reduce((s, p) => s + p.stock_qty, 0))} Units
           </div>
         </div>
         <div className="card-surface p-4 border-l-4 border-l-blue-500">
-          <div className="text-xs text-muted-foreground mb-1">Main Godown Reserve</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("godown.kpi.inGodown")}</div>
           <div className="text-2xl font-bold font-mono text-blue-400">
             {qty(allItems.reduce((s, p) => s + p.godown_qty, 0))} Units
           </div>
         </div>
         <div className="card-surface p-4 border-l-4 border-l-emerald-500">
-          <div className="text-xs text-muted-foreground mb-1">Total Warehouse Asset Stock</div>
+          <div className="text-xs text-muted-foreground mb-1">{t("godown.kpi.totalItems")}</div>
           <div className="text-2xl font-bold font-mono text-emerald-400">
             {qty(allItems.reduce((s, p) => s + p.stock_qty + p.godown_qty, 0))} Units
           </div>
@@ -108,7 +123,7 @@ function GodownPage() {
         <div className="card-surface p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border">
             <div className="text-sm font-bold text-foreground">
-              Location-wise Stock Distribution ({filteredItems.length})
+              {t("godown.title")} ({filteredItems.length})
             </div>
 
             {/* Quick Filter Tabs */}
@@ -117,19 +132,19 @@ function GodownPage() {
                 onClick={() => setFilterMode("ALL")}
                 className={`px-2 py-1 rounded transition ${filterMode === "ALL" ? "bg-primary text-primary-foreground font-bold" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
               >
-                All Items
+                {t("inventory.filter.all")}
               </button>
               <button
                 onClick={() => setFilterMode("GODOWN_ONLY")}
                 className={`px-2 py-1 rounded transition ${filterMode === "GODOWN_ONLY" ? "bg-blue-500 text-white font-bold" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
               >
-                In Godown Only
+                {t("inventory.filter.inGodown")}
               </button>
               <button
                 onClick={() => setFilterMode("LOW_STOCK")}
                 className={`px-2 py-1 rounded transition ${filterMode === "LOW_STOCK" ? "bg-amber-500 text-black font-bold" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
               >
-                Low Stock
+                {t("inventory.filter.low")}
               </button>
             </div>
           </div>
@@ -139,7 +154,7 @@ function GodownPage() {
             <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search godown stock by product name, barcode, SKU, category..."
+              placeholder={t("godown.search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full h-8 pl-8 pr-3 bg-input border border-border rounded text-xs focus:outline-none focus:border-primary font-medium"
@@ -155,19 +170,19 @@ function GodownPage() {
             <table className="w-full text-sm">
               <thead className="text-[10px] uppercase text-muted-foreground bg-card border-b border-border sticky top-0 z-10">
                 <tr>
-                  <th className="text-left px-3 py-2">Product</th>
-                  <th className="text-right px-3 py-2">Shop Floor</th>
-                  <th className="text-right px-3 py-2">Main Godown</th>
-                  <th className="text-right px-3 py-2">Total</th>
+                  <th className="text-left px-3 py-2">{t("godown.col.product")}</th>
+                  <th className="text-right px-3 py-2">{t("godown.col.shopQty")}</th>
+                  <th className="text-right px-3 py-2">{t("godown.col.godownQty")}</th>
+                  <th className="text-right px-3 py-2">{t("common.total")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredItems.map((p) => (
+                {displayedItems.map((p) => (
                   <tr key={p.id} className="hover:bg-secondary/40 transition">
                     <td className="px-3 py-2">
                       <div className="font-semibold text-foreground">{p.name}</div>
                       <div className="text-[10px] font-mono text-muted-foreground flex gap-2">
-                        <span>Barcode: {p.barcode}</span>
+                        <span>{t("pos.barcode")}: {p.barcode}</span>
                         {p.category && <span className="text-primary/70">[{p.category}]</span>}
                       </div>
                     </td>
@@ -181,13 +196,82 @@ function GodownPage() {
                 {filteredItems.length === 0 && (
                   <tr>
                     <td colSpan={4} className="text-center py-8 text-xs text-muted-foreground">
-                      No products found matching "{search}".
+                      {t("godown.noResults")}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* High Performance Pagination Controls */}
+          {totalItemsCount > 0 && (
+            <div className="p-3 border-t border-border bg-card/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="text-muted-foreground font-mono text-[11px]">
+                Showing <span className="font-bold text-foreground">{(activePage - 1) * (pageSize === -1 ? totalItemsCount : pageSize) + 1}</span> to{" "}
+                <span className="font-bold text-foreground">{Math.min(activePage * (pageSize === -1 ? totalItemsCount : pageSize), totalItemsCount)}</span> of{" "}
+                <span className="font-bold text-foreground">{totalItemsCount}</span> items
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-muted-foreground text-[11px]">Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="h-8 px-2 rounded bg-input border border-border text-xs font-mono font-semibold text-foreground cursor-pointer"
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={250}>250</option>
+                    <option value={-1}>All ({totalItemsCount})</option>
+                  </select>
+                </div>
+
+                {pageSize !== -1 && totalPages > 1 && (
+                  <div className="flex items-center gap-1 font-mono">
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={activePage === 1}
+                      className="h-8 px-2 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                    >
+                      «
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={activePage === 1}
+                      className="h-8 px-2.5 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                    >
+                      ‹ Prev
+                    </button>
+
+                    <span className="px-2.5 py-1 text-xs font-bold text-primary bg-primary/10 rounded border border-primary/20">
+                      {activePage} / {totalPages}
+                    </span>
+
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={activePage >= totalPages}
+                      className="h-8 px-2.5 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                    >
+                      Next ›
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={activePage >= totalPages}
+                      className="h-8 px-2 rounded border border-border bg-secondary hover:bg-muted text-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                    >
+                      »
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Transfer History Log */}

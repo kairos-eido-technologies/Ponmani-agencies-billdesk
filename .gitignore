@@ -33,3 +33,10 @@ dist-ssr
 
 # SQLite databases
 *.db
+*.db-shm
+*.db-wal
+
+# Desktop build & release artifacts
+release/
+release-desktop/
+build-installer/

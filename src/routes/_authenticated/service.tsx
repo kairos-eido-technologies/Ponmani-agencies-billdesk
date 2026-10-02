@@ -8,10 +8,12 @@ import { PageHeader } from "./dashboard";
 import { inr } from "@/lib/format";
 import { Plus, Wrench, Printer, FileSpreadsheet, X, CheckCircle2, Ticket, Pencil } from "lucide-react";
 import { ServiceReceiptModal } from "@/components/ServiceReceiptModal";
+import { useT } from "@/lib/lang/lang-context";
 
 export const Route = createFileRoute("/_authenticated/service")({ component: ServicePage });
 
 function ServicePage() {
+  const t = useT();
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editTicket, setEditTicket] = useState<ServiceTicket | null>(null);
@@ -19,8 +21,18 @@ function ServicePage() {
 
   const tickets = useQuery({
     queryKey: ["local-service-tickets"],
+    staleTime: 60_000,
     queryFn: async () => db.getServiceTickets(),
   });
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  const allTickets = tickets.data || [];
+  const totalTicketsCount = allTickets.length;
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(totalTicketsCount / pageSize) || 1;
+  const activePage = Math.min(currentPage, totalPages);
+  const displayedTickets = pageSize === -1 ? allTickets : allTickets.slice((activePage - 1) * pageSize, activePage * pageSize);
 
   function exportServiceExcel() {
     const data = (tickets.data || []).map((t) => ({
@@ -49,21 +61,21 @@ function ServicePage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="Hardware Service & Repair Department"
-        subtitle="Device intake, queue sequence tokens, and WhatsApp service receipts"
+        title={t("service.title")}
+        subtitle={t("service.subtitle")}
         action={
           <div className="flex gap-2">
             <button
               onClick={exportServiceExcel}
               className="h-9 px-3 rounded-md bg-secondary border border-border text-xs font-semibold flex items-center gap-1.5 hover:bg-muted transition"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> Export Excel
+              <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" /> {t("service.exportExcel")}
             </button>
             <button
               onClick={() => setShowModal(true)}
               className="h-9 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1.5 hover:accent-glow transition"
             >
-              <Plus className="h-4 w-4" /> New Service Intake
+              <Plus className="h-4 w-4" /> {t("service.newTicket")}
             </button>
           </div>
         }
@@ -72,10 +84,11 @@ function ServicePage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {(["Intake", "In Progress", "Ready", "Delivered"] as const).map((st) => {
           const count = (tickets.data || []).filter((t) => t.status === st).length;
+          const label = st === "Intake" ? t("service.status.received") : st === "In Progress" ? t("service.status.inProgress") : st === "Ready" ? t("service.status.ready") : t("service.status.delivered");
           return (
             <div key={st} className="card-surface p-3 flex justify-between items-center">
               <div>
-                <div className="text-[10px] uppercase font-bold text-muted-foreground">{st} Tickets</div>
+                <div className="text-[10px] uppercase font-bold text-muted-foreground">{label}</div>
                 <div className="text-xl font-bold font-mono text-foreground mt-0.5">{count}</div>
               </div>
               <Wrench
@@ -92,24 +105,23 @@ function ServicePage() {
         <table className="w-full text-sm">
           <thead className="text-[10px] uppercase text-muted-foreground tracking-wider bg-card border-b border-border">
             <tr>
-              <th className="text-left px-4 py-2.5">Queue Token</th>
-              <th className="text-left px-4 py-2.5">Ticket #</th>
-              <th className="text-left px-4 py-2.5">Customer</th>
-              <th className="text-left px-4 py-2.5">Device & Serial</th>
-              <th className="text-left px-4 py-2.5">Reported Issue</th>
-              <th className="text-center px-4 py-2.5">Status</th>
-              <th className="text-right px-4 py-2.5">Est / Final Cost</th>
-              <th className="text-right px-4 py-2.5">Actions</th>
+              <th className="text-left px-4 py-2.5">{t("service.col.token")}</th>
+              <th className="text-left px-4 py-2.5">{t("service.col.ticket")}</th>
+              <th className="text-left px-4 py-2.5">{t("service.col.customer")}</th>
+              <th className="text-left px-4 py-2.5">{t("service.col.device")}</th>
+              <th className="text-left px-4 py-2.5">{t("service.col.issue")}</th>
+              <th className="text-center px-4 py-2.5">{t("service.col.status")}</th>
+              <th className="text-right px-4 py-2.5">{t("service.col.charge")}</th>
+              <th className="text-right px-4 py-2.5">{t("service.col.actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {(() => {
-              // Sort by created_at ascending to assign correct sequential token numbers
               const sorted = [...(tickets.data || [])].sort(
-                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                (a, b) => new Date(a.created_at || Date.now()).getTime() - new Date(b.created_at || Date.now()).getTime()
               );
               const tokenMap = new Map(sorted.map((t, i) => [t.id, String(i + 1).padStart(2, '0')]));
-              return tickets.data?.map((t) => {
+              return displayedTickets.map((t) => {
                 const tokenNum = tokenMap.get(t.id) || '01';
                 const displayToken = `TOKEN-#${tokenNum}`;
                 const enrichedTicket = { ...t, queue_number: displayToken };
@@ -157,9 +169,9 @@ function ServicePage() {
                         <button
                           onClick={() => setSelectedReceiptTicket(enrichedTicket)}
                           title="View, Print & WhatsApp Receipt"
-                          className="h-8 px-3 rounded-md bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 text-xs font-semibold border border-emerald-500/30 inline-flex items-center gap-1.5 transition"
+                          className="h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:accent-glow inline-flex items-center gap-1.5 transition"
                         >
-                          <Printer className="h-3.5 w-3.5" /> Receipt
+                          <Printer className="h-3.5 w-3.5" /> Service Receipt
                         </button>
                       </div>
                     </td>
@@ -167,15 +179,72 @@ function ServicePage() {
                 );
               });
             })()}
-            {tickets.data?.length === 0 && (
+            {allTickets.length === 0 && (
               <tr>
                 <td colSpan={8} className="text-center py-12 text-sm text-muted-foreground">
-                  No hardware service tickets logged yet.
+                  No service tickets recorded yet.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+
+        {/* Pagination Bar */}
+        {totalTicketsCount > 0 && (
+          <div className="p-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-muted-foreground">
+              Showing{" "}
+              <span className="font-mono font-bold text-foreground">
+                {pageSize === -1 ? 1 : Math.min((activePage - 1) * pageSize + 1, totalTicketsCount)}
+              </span>{" "}
+              to{" "}
+              <span className="font-mono font-bold text-foreground">
+                {pageSize === -1 ? totalTicketsCount : Math.min(activePage * pageSize, totalTicketsCount)}
+              </span>{" "}
+              of <span className="font-mono font-bold text-foreground">{totalTicketsCount}</span> service tickets
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-2 py-1 bg-secondary border border-border rounded text-xs font-mono font-medium focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={-1}>All ({totalTicketsCount})</option>
+                </select>
+              </div>
+              {pageSize !== -1 && (
+                <div className="flex items-center gap-1 font-mono">
+                  <button
+                    disabled={activePage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 bg-secondary border border-border rounded disabled:opacity-40 hover:bg-muted font-bold transition"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 font-bold text-primary">
+                    {activePage} / {totalPages}
+                  </span>
+                  <button
+                    disabled={activePage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 bg-secondary border border-border rounded disabled:opacity-40 hover:bg-muted font-bold transition"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {(showModal || editTicket) && (
@@ -229,7 +298,7 @@ function ServiceTicketModal({
     serial_number: ticket?.serial_number || "",
     issue_description: ticket?.issue_description || "",
     estimated_cost: ticket?.estimated_cost || 0,
-    final_cost: ticket?.final_cost || ticket?.estimated_cost || 0,
+    final_cost: ticket?.final_cost !== undefined ? ticket.final_cost : (ticket?.estimated_cost || 0),
     status: ticket?.status || "Intake",
   });
 

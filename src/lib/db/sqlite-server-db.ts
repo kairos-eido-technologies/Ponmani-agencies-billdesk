@@ -5,14 +5,33 @@ import fs from 'fs';
 
 // Helper to determine OS-specific persistent database path
 function getDbPath(): string {
-  const isElectron = typeof process !== 'undefined' && !!process.versions?.electron;
+  const isElectron = typeof process !== 'undefined' && (!!process.versions?.electron || !!process.env.ELECTRON_RUN_AS_NODE);
   if (isElectron) {
     const userData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
     const dbDir = path.join(userData, 'Ponmani Stores');
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
-    return path.join(dbDir, 'ponmani_console.db');
+    const targetDb = path.join(dbDir, 'ponmani_console.db');
+    // On first run in Electron, if target doesn't exist, initialize from bundled db
+    if (!fs.existsSync(targetDb)) {
+      const candidates = [
+        path.join(process.cwd(), 'ponmani_console.db'),
+        path.join(process.cwd(), 'resources', 'app', 'ponmani_console.db'),
+      ];
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          try {
+            fs.copyFileSync(candidate, targetDb);
+            console.log(`[SQLite Server] Initialized database from ${candidate}`);
+            break;
+          } catch (e) {
+            console.warn(`[SQLite Server] Could not copy initial database:`, e);
+          }
+        }
+      }
+    }
+    return targetDb;
   }
   // Default workspace root for development
   return path.join(process.cwd(), 'ponmani_console.db');
@@ -65,6 +84,7 @@ class ServerSQLite {
 export class SQLiteDatabaseManager {
   private static instance: ServerSQLite | null = null;
   private static columnCache: Record<string, Set<string>> = {};
+  private static schemaInitialized = false;
 
   public static getDB(): ServerSQLite {
     if (!this.instance) {
@@ -79,6 +99,7 @@ export class SQLiteDatabaseManager {
    * Create schema tables if they don't exist and run auto-migrations
    */
   public static async initializeSchema(): Promise<void> {
+    if (this.schemaInitialized) return;
     const db = this.getDB();
     
     const tablesSql = `
@@ -98,6 +119,7 @@ export class SQLiteDatabaseManager {
         unit TEXT,
         cost_price REAL,
         selling_price REAL,
+        mrp REAL DEFAULT 0,
         stock_qty REAL,
         godown_qty REAL,
         moq REAL,
@@ -192,6 +214,7 @@ export class SQLiteDatabaseManager {
         product_name TEXT,
         qty REAL,
         unit_price REAL,
+        mrp REAL DEFAULT 0,
         tax_rate REAL,
         total_price REAL,
         is_return INTEGER DEFAULT 0
@@ -199,33 +222,44 @@ export class SQLiteDatabaseManager {
       CREATE TABLE IF NOT EXISTS service_tickets (
         id TEXT PRIMARY KEY,
         ticket_number TEXT,
+        queue_number TEXT,
+        customer_id TEXT,
         customer_name TEXT,
         customer_mobile TEXT,
         device_name TEXT,
+        serial_number TEXT,
         issue_description TEXT,
         estimated_cost REAL,
         advance_paid REAL,
+        final_cost REAL DEFAULT 0,
         status TEXT,
         assigned_technician TEXT,
-        created_at TEXT
+        created_at TEXT,
+        updated_at TEXT
       );
       CREATE TABLE IF NOT EXISTS scrap_entries (
         id TEXT PRIMARY KEY,
         customer_name TEXT,
         customer_mobile TEXT,
+        item_type TEXT,
         item_description TEXT,
         weight_kg REAL,
         price_per_kg REAL,
         total_payout REAL,
+        notes TEXT,
+        is_exchange INTEGER DEFAULT 0,
+        invoice_id TEXT,
         created_at TEXT
       );
       CREATE TABLE IF NOT EXISTS godown_transfers (
         id TEXT PRIMARY KEY,
         product_id TEXT,
         product_name TEXT,
+        transfer_type TEXT,
         qty REAL,
         source TEXT,
         destination TEXT,
+        notes TEXT,
         transfer_date TEXT,
         created_at TEXT
       );
@@ -241,13 +275,30 @@ export class SQLiteDatabaseManager {
         key TEXT PRIMARY KEY,
         value TEXT
       );
+
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA cache_size = -64000;
+      PRAGMA temp_store = MEMORY;
+
+      CREATE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode);
+      CREATE INDEX IF NOT EXISTS idx_inventory_name ON inventory(name);
+      CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
+      CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id);
+      CREATE INDEX IF NOT EXISTS idx_invoice_items_product_id ON invoice_items(product_id);
+      CREATE INDEX IF NOT EXISTS idx_customers_mobile ON customers(mobile);
+
+      PRAGMA optimize;
     `;
     await db.exec(tablesSql);
 
     // Auto-migrate missing columns for existing databases on disk
     const migrations = [
+      `ALTER TABLE inventory ADD COLUMN mrp REAL DEFAULT 0;`,
       `ALTER TABLE invoices ADD COLUMN is_synced REAL DEFAULT 0;`,
       `ALTER TABLE invoice_items ADD COLUMN is_return INTEGER DEFAULT 0;`,
+      `ALTER TABLE invoice_items ADD COLUMN mrp REAL DEFAULT 0;`,
       `ALTER TABLE vendors ADD COLUMN balance_due REAL DEFAULT 0;`,
       `ALTER TABLE vendors ADD COLUMN phone TEXT;`,
       `ALTER TABLE vendors ADD COLUMN email TEXT;`,
@@ -261,6 +312,17 @@ export class SQLiteDatabaseManager {
       `ALTER TABLE purchase_items ADD COLUMN gst_rate REAL DEFAULT 0;`,
       `ALTER TABLE invoices ADD COLUMN exchange_amount REAL DEFAULT 0;`,
       `ALTER TABLE invoices ADD COLUMN exchange_notes TEXT;`,
+      `ALTER TABLE service_tickets ADD COLUMN queue_number TEXT;`,
+      `ALTER TABLE service_tickets ADD COLUMN customer_id TEXT;`,
+      `ALTER TABLE service_tickets ADD COLUMN serial_number TEXT;`,
+      `ALTER TABLE service_tickets ADD COLUMN final_cost REAL DEFAULT 0;`,
+      `ALTER TABLE service_tickets ADD COLUMN updated_at TEXT;`,
+      `ALTER TABLE scrap_entries ADD COLUMN item_type TEXT;`,
+      `ALTER TABLE scrap_entries ADD COLUMN notes TEXT;`,
+      `ALTER TABLE scrap_entries ADD COLUMN is_exchange INTEGER DEFAULT 0;`,
+      `ALTER TABLE scrap_entries ADD COLUMN invoice_id TEXT;`,
+      `ALTER TABLE godown_transfers ADD COLUMN transfer_type TEXT;`,
+      `ALTER TABLE godown_transfers ADD COLUMN notes TEXT;`,
     ];
 
     for (const sql of migrations) {
@@ -273,6 +335,7 @@ export class SQLiteDatabaseManager {
 
     // Reset column cache after schema init/migrations
     this.columnCache = {};
+    this.schemaInitialized = true;
   }
 
   /**
@@ -447,6 +510,88 @@ export class SQLiteDatabaseManager {
           const sql = `INSERT OR REPLACE INTO ${table} (${columns}) VALUES (${placeholders})`;
           await db.run(sql, values);
         }
+      }
+
+      await db.exec('COMMIT;');
+    } catch (err) {
+      await db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  /**
+   * Reset transactions only: wipes invoices, sales, service tickets while keeping inventory & settings
+   */
+  public static async clearTransactionsOnly(): Promise<void> {
+    const db = this.getDB();
+    await this.initializeSchema();
+    await db.exec('BEGIN TRANSACTION;');
+    try {
+      const txTables = [
+        'invoices', 'invoice_items', 'service_tickets', 'scrap_entries',
+        'godown_transfers', 'purchase_orders', 'purchase_items', 'loyalty_ledger'
+      ];
+      for (const table of txTables) {
+        await db.run(`DELETE FROM ${table}`);
+      }
+      await db.run(`UPDATE customers SET balance_due = 0`);
+      await db.run(`UPDATE vendors SET balance_due = 0`);
+      await db.exec('COMMIT;');
+    } catch (err) {
+      await db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  /**
+   * Full Factory Reset: wipes store data and re-provisions for a clean new store
+   */
+  public static async factoryResetStore(options?: {
+    shop_name?: string;
+    shop_address?: string;
+    shop_phone?: string;
+    shop_gstin?: string;
+    receipt_header_note?: string;
+    receipt_footer_note?: string;
+    keepProducts?: boolean;
+  }): Promise<void> {
+    const db = this.getDB();
+    await this.initializeSchema();
+    await db.exec('BEGIN TRANSACTION;');
+    try {
+      const allTables = [
+        'invoices', 'invoice_items', 'service_tickets', 'scrap_entries',
+        'godown_transfers', 'purchase_orders', 'purchase_items', 'loyalty_ledger',
+        'customers', 'vendors', 'backups_log'
+      ];
+      if (!options?.keepProducts) {
+        allTables.push('inventory');
+      }
+      for (const table of allTables) {
+        await db.run(`DELETE FROM ${table}`);
+      }
+
+      // Ensure default admin user exists
+      await db.run(`DELETE FROM users`);
+      await db.run(
+        `INSERT INTO users (id, username, pin, role, created_at) VALUES (?, ?, ?, ?, ?)`,
+        ['usr-admin-1', 'admin', '1234', 'Admin', new Date().toISOString()]
+      );
+
+      // Re-provision settings for the new store
+      const newSettings: Record<string, string> = {
+        shop_name: options?.shop_name || 'My Retail Store',
+        shop_address: options?.shop_address || 'Main Road, Market Center',
+        shop_phone: options?.shop_phone || '+91 98765 43210',
+        shop_gstin: options?.shop_gstin || '',
+        receipt_header_note: options?.receipt_header_note || 'Retail & Service Management',
+        receipt_footer_note: options?.receipt_footer_note || 'Goods once sold can be exchanged with valid bill.',
+        thermal_printer_width: '80mm',
+        app_lang: 'en'
+      };
+
+      for (const [key, value] of Object.entries(newSettings)) {
+        await db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [key, String(value)]);
       }
 
       await db.exec('COMMIT;');

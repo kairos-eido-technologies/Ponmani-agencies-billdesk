@@ -1,15 +1,52 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "ponmani-agencies-console",
+  "version": "1.0.0",
+  "description": "Ponmani Agencies Console ERP Offline Desktop Application",
+  "author": "Ponmani Agencies",
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "main": "electron/dist/main.js",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "build:electron": "tsc electron/main.ts electron/preload.ts --outDir electron/dist --module NodeNext --target ES2022 --skipLibCheck",
+    "dist": "npm run build && npm run build:electron && electron-packager . \"Ponmani Agencies Console ERP\" --platform=win32 --arch=x64 --icon=public/ponmani-logo-icon.ico --out=release-desktop --overwrite",
     "lint": "eslint .",
     "format": "prettier --write ."
+  },
+  "build": {
+    "appId": "com.ponmani.console",
+    "productName": "Ponmani Agencies Console ERP",
+    "npmRebuild": false,
+    "directories": {
+      "output": "build-installer"
+    },
+    "files": [
+      ".output/**/*",
+      "electron/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ponmani Agencies Console ERP"
+    }
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -78,6 +115,9 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "electron-packager": "^17.1.2",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
@@ -85,6 +125,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "nitro": "3.0.260603-beta",
+    "png-to-ico": "^3.0.2",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",

@@ -26,6 +26,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedScrapRouteImport } from './routes/_authenticated/scrap'
 import { Route as AuthenticatedServiceRouteImport } from './routes/_authenticated/service'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedShoppingListRouteImport } from './routes/_authenticated/shopping-list'
 import { Route as AuthenticatedInvoicesIndexRouteImport } from './routes/_authenticated/invoices.index'
 import { Route as AuthenticatedInvoicesIdRouteImport } from './routes/_authenticated/invoices.$id'
 
@@ -113,6 +114,12 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedShoppingListRoute =
+  AuthenticatedShoppingListRouteImport.update({
+    id: '/shopping-list',
+    path: '/shopping-list',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedInvoicesIndexRoute =
   AuthenticatedInvoicesIndexRouteImport.update({
     id: '/',
@@ -142,6 +149,7 @@ export interface FileRoutesByFullPath {
   '/scrap': typeof AuthenticatedScrapRoute
   '/service': typeof AuthenticatedServiceRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/shopping-list': typeof AuthenticatedShoppingListRoute
   '/invoices/$id': typeof AuthenticatedInvoicesIdRoute
   '/invoices/': typeof AuthenticatedInvoicesIndexRoute
 }
@@ -161,6 +169,7 @@ export interface FileRoutesByTo {
   '/scrap': typeof AuthenticatedScrapRoute
   '/service': typeof AuthenticatedServiceRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/shopping-list': typeof AuthenticatedShoppingListRoute
   '/invoices/$id': typeof AuthenticatedInvoicesIdRoute
   '/invoices': typeof AuthenticatedInvoicesIndexRoute
 }
@@ -183,6 +192,7 @@ export interface FileRoutesById {
   '/_authenticated/scrap': typeof AuthenticatedScrapRoute
   '/_authenticated/service': typeof AuthenticatedServiceRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/shopping-list': typeof AuthenticatedShoppingListRoute
   '/_authenticated/invoices/$id': typeof AuthenticatedInvoicesIdRoute
   '/_authenticated/invoices/': typeof AuthenticatedInvoicesIndexRoute
 }
@@ -205,6 +215,7 @@ export interface FileRouteTypes {
     | '/scrap'
     | '/service'
     | '/settings'
+    | '/shopping-list'
     | '/invoices/$id'
     | '/invoices/'
   fileRoutesByTo: FileRoutesByTo
@@ -224,6 +235,7 @@ export interface FileRouteTypes {
     | '/scrap'
     | '/service'
     | '/settings'
+    | '/shopping-list'
     | '/invoices/$id'
     | '/invoices'
   id:
@@ -245,6 +257,7 @@ export interface FileRouteTypes {
     | '/_authenticated/scrap'
     | '/_authenticated/service'
     | '/_authenticated/settings'
+    | '/_authenticated/shopping-list'
     | '/_authenticated/invoices/$id'
     | '/_authenticated/invoices/'
   fileRoutesById: FileRoutesById
@@ -376,6 +389,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/shopping-list': {
+      id: '/_authenticated/shopping-list'
+      path: '/shopping-list'
+      fullPath: '/shopping-list'
+      preLoaderRoute: typeof AuthenticatedShoppingListRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/invoices/': {
       id: '/_authenticated/invoices/'
       path: '/'
@@ -423,6 +443,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedScrapRoute: typeof AuthenticatedScrapRoute
   AuthenticatedServiceRoute: typeof AuthenticatedServiceRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedShoppingListRoute: typeof AuthenticatedShoppingListRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -440,6 +461,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedScrapRoute: AuthenticatedScrapRoute,
   AuthenticatedServiceRoute: AuthenticatedServiceRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedShoppingListRoute: AuthenticatedShoppingListRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
