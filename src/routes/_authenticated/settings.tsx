@@ -52,7 +52,6 @@ function SettingsPage() {
     shop_gstin: "",
     receipt_header_note: "",
     receipt_footer_note: "",
-    keepProducts: true,
     confirmText: "",
   });
 
@@ -225,10 +224,9 @@ function SettingsPage() {
         shop_gstin: factoryResetForm.shop_gstin.trim(),
         receipt_header_note: factoryResetForm.receipt_header_note.trim(),
         receipt_footer_note: factoryResetForm.receipt_footer_note.trim(),
-        keepProducts: factoryResetForm.keepProducts,
       });
 
-      toast.success(`Factory reset complete! Initialized for "${factoryResetForm.shop_name.trim()}". Admin PIN: 1234.`);
+      toast.success(`Factory reset complete! Everything wiped clean. Initialized for "${factoryResetForm.shop_name.trim()}". Admin PIN: 1234.`);
       setShowFactoryResetModal(false);
 
       qc.invalidateQueries();
@@ -448,7 +446,7 @@ function SettingsPage() {
                       </span>
                     </div>
                     <div className="text-[10px] text-muted-foreground font-mono">
-                      {u.role === "Cashier" ? "Direct POS Billing & WhatsApp only" : "Full access to all 12 modules"}
+                      {u.role === "Cashier" ? "POS Billing & Service Desk" : "Full access to all 12 modules"}
                     </div>
                   </div>
                 </div>
@@ -565,7 +563,6 @@ function SettingsPage() {
                   shop_gstin: settingsForm.shop_gstin || "",
                   receipt_header_note: settingsForm.receipt_header_note || "",
                   receipt_footer_note: settingsForm.receipt_footer_note || "",
-                  keepProducts: true,
                   confirmText: "",
                 });
                 setShowFactoryResetModal(true);
@@ -594,7 +591,7 @@ function SettingsPage() {
               <Store className="h-3.5 w-3.5" /> Option 2: Full Factory Reset & New Store Onboarding
             </div>
             <p className="text-muted-foreground leading-relaxed">
-              Deploys the desktop application for a brand new store client. Sets up their Store Name, Address, Phone, and GSTIN, resets Admin PIN to <span className="font-mono text-rose-300 font-bold">1234</span>, clears all past transactions, and allows choosing whether to retain or wipe product inventory.
+              Deploys the desktop application for a brand new store client. Sets up their Store Name, Address, Phone, and GSTIN, resets Admin PIN to <span className="font-mono text-rose-300 font-bold">1234</span>, and permanently wipes everything (all product catalog items, inventory stock, suppliers, customers, and billing history) for a 100% clean blank slate.
             </p>
           </div>
         </div>
@@ -674,7 +671,7 @@ function SettingsPage() {
                   >
                     <div className="text-xs font-bold">Cashier</div>
                     <div className="text-[9px] text-muted-foreground mt-0.5">
-                      Direct POS Billing & WhatsApp only
+                      POS Billing & Service Desk
                     </div>
                   </button>
                   <button
@@ -852,14 +849,23 @@ function SettingsPage() {
             </div>
 
             <form onSubmit={handleFactoryReset} className="space-y-4">
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <AlertOctagon className="h-4 w-4 shrink-0" />
-                  Warning: Complete Store Re-provisioning
+              <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 space-y-2">
+                <div className="font-bold flex items-center gap-1.5 text-rose-300">
+                  <AlertOctagon className="h-4 w-4 shrink-0 text-rose-400" />
+                  Warning: Complete Factory Reset (Permanent Wipe of Everything)
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  This wipes all past sales, invoices, customer debts, and service records. The admin login credentials will reset to:
-                  <span className="font-mono text-rose-200 font-bold ml-1">admin / PIN: 1234</span>.
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  This will permanently delete <strong className="text-rose-200">EVERYTHING</strong> in the system:
+                </p>
+                <ul className="text-[11px] text-rose-200/90 list-disc list-inside space-y-0.5 ml-1">
+                  <li>All product catalog items, prices, barcodes & stock quantities</li>
+                  <li>All past sales invoices, POS held bills & credit ledgers</li>
+                  <li>All customers, suppliers/vendors & purchase orders</li>
+                  <li>All repair/service tickets & scrap buy entries</li>
+                  <li>All backup logs & previous store settings</li>
+                </ul>
+                <p className="text-[11px] text-muted-foreground pt-1">
+                  The default Admin account will be reset to: <span className="font-mono text-rose-200 font-bold ml-1">admin / PIN: 1234</span>.
                 </p>
               </div>
 
@@ -906,25 +912,6 @@ function SettingsPage() {
                   </L>
                 </div>
 
-                <div className="pt-2">
-                  <div
-                    onClick={() => setFactoryResetForm({ ...factoryResetForm, keepProducts: !factoryResetForm.keepProducts })}
-                    className="flex items-start gap-2.5 p-3 rounded-lg border border-border bg-secondary/40 cursor-pointer hover:bg-secondary transition"
-                  >
-                    <div className="mt-0.5 text-primary">
-                      {factoryResetForm.keepProducts ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4 text-muted-foreground" />}
-                    </div>
-                    <div className="text-xs">
-                      <div className="font-bold text-foreground">Retain product inventory catalog & categories</div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {factoryResetForm.keepProducts
-                          ? "Products and prices will be retained so the new store doesn't have to re-enter items."
-                          : "Inventory catalog will be completely cleared for a 100% empty blank slate."}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="pt-1">
                   <label className="text-[10px] uppercase font-bold text-rose-400 mb-1 block">
                     Type "RESET" to confirm:
@@ -955,7 +942,7 @@ function SettingsPage() {
                   className="h-9 px-5 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 transition"
                 >
                   {isProcessingReset && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-                  {isProcessingReset ? "Initializing Store..." : "Execute Factory Reset"}
+                  {isProcessingReset ? "Wiping & Initializing Store..." : "Execute Factory Reset (Wipe Everything)"}
                 </button>
               </div>
             </form>

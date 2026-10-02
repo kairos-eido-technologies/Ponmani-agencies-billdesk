@@ -4,6 +4,7 @@ import {
   redirect,
   Link,
   useNavigate,
+  useLocation,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-store";
@@ -16,6 +17,8 @@ import {
   Grid2X2,
   ShieldCheck,
   Languages,
+  ShoppingCart,
+  Wrench,
 } from "lucide-react";
 import { useLang, useT } from "@/lib/lang/lang-context";
 
@@ -24,7 +27,11 @@ export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async ({ location }) => {
     const user = useAuth.getState().user;
     if (!user) throw redirect({ to: "/auth" });
-    if (user.role?.toLowerCase() === "cashier" && location.pathname !== "/pos") {
+    if (
+      user.role?.toLowerCase() === "cashier" &&
+      !location.pathname.startsWith("/pos") &&
+      !location.pathname.startsWith("/service")
+    ) {
       throw redirect({ to: "/pos" });
     }
     return { userId: user.id, username: user.username, role: user.role };
@@ -34,6 +41,7 @@ export const Route = createFileRoute("/_authenticated")({
 
 function Shell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
   const queryClient = useQueryClient();
@@ -100,7 +108,34 @@ function Shell() {
             </div>
           </Link>
 
-          {!isCashier && (
+          {isCashier ? (
+            <div className="flex items-center gap-1.5 ml-1 sm:ml-2">
+              <Link
+                to="/pos"
+                className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs ${
+                  location.pathname.startsWith("/pos")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary border border-border text-foreground hover:bg-muted"
+                }`}
+                title="POS Billing"
+              >
+                <ShoppingCart className="h-3.5 w-3.5" />
+                <span>{t("nav.pos") || "POS Billing"}</span>
+              </Link>
+              <Link
+                to="/service"
+                className={`h-8 px-2.5 sm:px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-xs ${
+                  location.pathname.startsWith("/service")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary border border-border text-foreground hover:bg-muted"
+                }`}
+                title="Service Desk"
+              >
+                <Wrench className="h-3.5 w-3.5" />
+                <span>{t("nav.service") || "Service Desk"}</span>
+              </Link>
+            </div>
+          ) : (
             <>
               <div className="h-4 w-[1px] bg-border mx-0.5 hidden sm:block" />
 

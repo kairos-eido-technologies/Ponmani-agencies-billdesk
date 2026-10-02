@@ -195,8 +195,6 @@ export interface DBStore {
   settings: Record<string, any>;
 }
 
-const UTENSILS_SEED = generateUtensilsSeedData();
-
 const INITIAL_SEED: DBStore = {
   users: [
     {
@@ -214,19 +212,46 @@ const INITIAL_SEED: DBStore = {
       created_at: new Date().toISOString(),
     },
   ],
-  inventory: UTENSILS_SEED.inventory,
-  vendors: UTENSILS_SEED.vendors,
-  purchase_orders: UTENSILS_SEED.purchase_orders,
-  purchase_items: UTENSILS_SEED.purchase_items,
-  customers: UTENSILS_SEED.customers,
-  loyalty_ledger: UTENSILS_SEED.loyalty_ledger,
-  invoices: UTENSILS_SEED.invoices,
-  invoice_items: UTENSILS_SEED.invoice_items,
-  service_tickets: UTENSILS_SEED.service_tickets,
-  scrap_entries: UTENSILS_SEED.scrap_entries,
-  godown_transfers: UTENSILS_SEED.godown_transfers,
+  inventory: [],
+  vendors: [],
+  purchase_orders: [],
+  purchase_items: [],
+  customers: [],
+  loyalty_ledger: [],
+  invoices: [],
+  invoice_items: [],
+  service_tickets: [],
+  scrap_entries: [],
+  godown_transfers: [],
   backups_log: [],
-  settings: UTENSILS_SEED.settings,
+  settings: {
+    shop_name: "Ponmani Agencies",
+    shop_address: "Main Road, Market Center",
+    shop_phone: "+91 98765 43210",
+    shop_gstin: "",
+    receipt_header_note: "Retail & Service Management",
+    receipt_footer_note: "Goods once sold can be exchanged with valid bill.",
+    thermal_printer_width: "80mm",
+    app_lang: "en",
+    system_initialized: "true",
+  },
+};
+
+const EMPTY_STORE: DBStore = {
+  users: [],
+  inventory: [],
+  vendors: [],
+  purchase_orders: [],
+  purchase_items: [],
+  customers: [],
+  loyalty_ledger: [],
+  invoices: [],
+  invoice_items: [],
+  service_tickets: [],
+  scrap_entries: [],
+  godown_transfers: [],
+  backups_log: [],
+  settings: {},
 };
 
 let isSyncingFromSQLite = false;
@@ -331,7 +356,7 @@ class OfflineDB {
   public loadPromise: Promise<void>;
 
   constructor() {
-    this.memoryData = { ...INITIAL_SEED };
+    this.memoryData = { ...EMPTY_STORE };
     this.rebuildInventoryMaps();
     
     if (typeof window === 'undefined') {
@@ -364,9 +389,10 @@ class OfflineDB {
       const response = await fetch('/api/db');
       if (response.ok) {
         const store = await response.json();
-        // If server SQLite database is empty (e.g. newly initialized), initialize with seed
-        if (!store.users || store.users.length === 0 || !store.inventory || store.inventory.length === 0) {
-          console.log('[SQLite Server] SQLite database is empty. Seeding initial data...');
+        // If server SQLite database is brand new and completely empty (zero users and zero settings), initialize with seed
+        const isCompletelyUninitialized = (!store.users || store.users.length === 0) && (!store.settings || Object.keys(store.settings).length === 0);
+        if (isCompletelyUninitialized) {
+          console.log('[SQLite Server] SQLite database is brand new and uninitialized. Seeding initial data...');
           this.memoryData = { ...INITIAL_SEED };
           this.isLoaded = true;
           // Seed the SQLite server in background
@@ -391,7 +417,7 @@ class OfflineDB {
           scrap_entries: store.scrap_entries || [],
           godown_transfers: store.godown_transfers || [],
           backups_log: store.backups_log || [],
-          settings: { ...INITIAL_SEED.settings, ...store.settings },
+          settings: store.settings || {},
         };
         this.rebuildInventoryMaps();
         this.isLoaded = true;
@@ -440,7 +466,7 @@ class OfflineDB {
         settings[s.key] = s.value;
       });
 
-      if (users.length === 0) {
+      if (users.length === 0 && (!settings || Object.keys(settings).length === 0)) {
         await this.seedInitialData();
       } else {
         this.memoryData = {
@@ -457,7 +483,7 @@ class OfflineDB {
           scrap_entries,
           godown_transfers,
           backups_log,
-          settings: { ...INITIAL_SEED.settings, ...settings },
+          settings: settings || {},
         };
       }
     } catch (err) {
@@ -548,7 +574,7 @@ class OfflineDB {
           scrap_entries: store.scrap_entries || [],
           godown_transfers: store.godown_transfers || [],
           backups_log: store.backups_log || [],
-          settings: { ...INITIAL_SEED.settings, ...store.settings },
+          settings: store.settings || {},
         };
         this.rebuildInventoryMaps();
         isSyncingFromSQLite = false;
@@ -646,7 +672,9 @@ class OfflineDB {
       console.warn('[DB] SQLite factory_reset failed:', e);
     }
 
+    // Wipe ALL Dexie tables completely including product catalog
     const clearPromises = [
+      this.dexieDb.inventory.clear(),
       this.dexieDb.invoices.clear(),
       this.dexieDb.invoice_items.clear(),
       this.dexieDb.service_tickets.clear(),
@@ -658,18 +686,78 @@ class OfflineDB {
       this.dexieDb.customers.clear(),
       this.dexieDb.vendors.clear(),
       this.dexieDb.backups_log.clear(),
+      this.dexieDb.users.clear(),
+      this.dexieDb.settings.clear(),
     ];
 
-    if (!options?.keepProducts) {
-      clearPromises.push(this.dexieDb.inventory.clear());
-    }
-
     await Promise.all(clearPromises);
+
+    const defaultUsers: User[] = [
+      {
+        id: 'usr-admin-1',
+        username: 'admin',
+        pin: '1234',
+        role: 'Admin',
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 'usr-cashier-1',
+        username: 'cashier',
+        pin: '0000',
+        role: 'Cashier',
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    const cleanSettings: Record<string, any> = {
+      shop_name: options?.shop_name?.trim() || 'Ponmani Agencies',
+      shop_address: options?.shop_address?.trim() || '',
+      shop_phone: options?.shop_phone?.trim() || '',
+      shop_gstin: options?.shop_gstin?.trim() || '',
+      receipt_header_note: options?.receipt_header_note?.trim() || 'Retail & Service Management',
+      receipt_footer_note: options?.receipt_footer_note?.trim() || 'Goods once sold can be exchanged with valid bill.',
+      thermal_printer_width: '80mm',
+      app_lang: 'en',
+      system_initialized: 'true',
+    };
+
+    await this.dexieDb.users.bulkPut(defaultUsers);
+    await this.dexieDb.settings.bulkPut(
+      Object.entries(cleanSettings).map(([key, value]) => ({ key, value }))
+    );
+
+    this.barcodeMap.clear();
+    this.idMap.clear();
+    this.memoryData = {
+      users: defaultUsers,
+      inventory: [],
+      vendors: [],
+      customers: [],
+      purchase_orders: [],
+      purchase_items: [],
+      invoices: [],
+      invoice_items: [],
+      loyalty_ledger: [],
+      service_tickets: [],
+      scrap_entries: [],
+      godown_transfers: [],
+      backups_log: [],
+      settings: cleanSettings,
+    };
 
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('ponmani_simple_shopping_list_v2');
         localStorage.removeItem('ponmani_restock_shopping_list_v1');
+        localStorage.removeItem('pos_held_bills');
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key !== 'ponmani_lang') {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
       } catch (e) {}
     }
 

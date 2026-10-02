@@ -544,7 +544,8 @@ export class SQLiteDatabaseManager {
   }
 
   /**
-   * Full Factory Reset: wipes store data and re-provisions for a clean new store
+   * Full Factory Reset: wipes everything (product catalog, inventory, transactions, customers, suppliers, settings)
+   * and provisions a fresh blank database for a clean store.
    */
   public static async factoryResetStore(options?: {
     shop_name?: string;
@@ -560,34 +561,46 @@ export class SQLiteDatabaseManager {
     await db.exec('BEGIN TRANSACTION;');
     try {
       const allTables = [
-        'invoices', 'invoice_items', 'service_tickets', 'scrap_entries',
-        'godown_transfers', 'purchase_orders', 'purchase_items', 'loyalty_ledger',
-        'customers', 'vendors', 'backups_log'
+        'inventory',
+        'invoices',
+        'invoice_items',
+        'service_tickets',
+        'scrap_entries',
+        'godown_transfers',
+        'purchase_orders',
+        'purchase_items',
+        'loyalty_ledger',
+        'customers',
+        'vendors',
+        'backups_log',
+        'users',
+        'settings'
       ];
-      if (!options?.keepProducts) {
-        allTables.push('inventory');
-      }
       for (const table of allTables) {
         await db.run(`DELETE FROM ${table}`);
       }
 
-      // Ensure default admin user exists
-      await db.run(`DELETE FROM users`);
+      // Ensure default admin & cashier users exist
       await db.run(
         `INSERT INTO users (id, username, pin, role, created_at) VALUES (?, ?, ?, ?, ?)`,
         ['usr-admin-1', 'admin', '1234', 'Admin', new Date().toISOString()]
       );
+      await db.run(
+        `INSERT INTO users (id, username, pin, role, created_at) VALUES (?, ?, ?, ?, ?)`,
+        ['usr-cashier-1', 'cashier', '0000', 'Cashier', new Date().toISOString()]
+      );
 
       // Re-provision settings for the new store
       const newSettings: Record<string, string> = {
-        shop_name: options?.shop_name || 'My Retail Store',
-        shop_address: options?.shop_address || 'Main Road, Market Center',
-        shop_phone: options?.shop_phone || '+91 98765 43210',
-        shop_gstin: options?.shop_gstin || '',
-        receipt_header_note: options?.receipt_header_note || 'Retail & Service Management',
-        receipt_footer_note: options?.receipt_footer_note || 'Goods once sold can be exchanged with valid bill.',
+        shop_name: options?.shop_name?.trim() || 'Ponmani Agencies',
+        shop_address: options?.shop_address?.trim() || '',
+        shop_phone: options?.shop_phone?.trim() || '',
+        shop_gstin: options?.shop_gstin?.trim() || '',
+        receipt_header_note: options?.receipt_header_note?.trim() || 'Retail & Service Management',
+        receipt_footer_note: options?.receipt_footer_note?.trim() || 'Goods once sold can be exchanged with valid bill.',
         thermal_printer_width: '80mm',
-        app_lang: 'en'
+        app_lang: 'en',
+        system_initialized: 'true',
       };
 
       for (const [key, value] of Object.entries(newSettings)) {
@@ -598,6 +611,12 @@ export class SQLiteDatabaseManager {
     } catch (err) {
       await db.exec('ROLLBACK;');
       throw err;
+    }
+
+    try {
+      await db.exec('VACUUM;');
+    } catch (e) {
+      console.warn('[SQLite Server] Vacuum after factory reset skipped:', e);
     }
   }
 }
