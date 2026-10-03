@@ -96,6 +96,57 @@ function InvoiceDetail() {
         </div>
       </div>
 
+      {/* ─── DYNAMIC PRINT PAGE STYLES ─── */}
+      {!isA4 ? (
+        <style>{`
+          @media print {
+            @page {
+              size: 76mm auto !important;
+              margin: 0mm !important;
+            }
+            html, body {
+              width: 76mm !important;
+              max-width: 76mm !important;
+              height: auto !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              overflow: visible !important;
+            }
+            #root, main, .min-h-screen {
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+            }
+            .thermal-receipt {
+              width: 76mm !important;
+              max-width: 76mm !important;
+              margin: 0 auto !important;
+              padding: 1.5mm 1.5mm 0mm 1.5mm !important;
+              height: auto !important;
+              min-height: 0 !important;
+              page-break-after: avoid !important;
+              break-after: avoid !important;
+            }
+          }
+        `}</style>
+      ) : (
+        <style>{`
+          @media print {
+            @page {
+              size: A4 portrait !important;
+              margin: 8mm 8mm 8mm 8mm !important;
+            }
+            html, body {
+              width: auto !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+          }
+        `}</style>
+      )}
+
       {/* ─── Receipt preview ─── */}
       <div className={`print:block flex justify-center items-start py-6 px-4 print:py-0 print:px-0 overflow-x-auto w-full ${isA4 ? "bg-gray-100" : ""}`}>
         {isA4 ? (

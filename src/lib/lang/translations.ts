@@ -40,6 +40,8 @@ const en: TranslationDict = {
   "header.newSale": "New Sale",
   "header.searchPlaceholder": "Search products or scan barcode… (press /)",
   "header.signOut": "Lock / Sign Out",
+  "nav.pos": "POS Billing",
+  "nav.service": "Service Desk",
 
   // ── Apps Launcher ──────────────────────────────────────────────────────────
   "apps.searchPlaceholder": "Search apps…",
@@ -554,6 +556,8 @@ const ta: TranslationDict = {
   "header.newSale": "புதிய விற்பனை",
   "header.searchPlaceholder": "பொருட்களை தேடவும் அல்லது பார்க்கோட் ஸ்கேன் செய்யவும்… (அழுத்து /)",
   "header.signOut": "பூட்டு / வெளியேறு",
+  "nav.pos": "POS பில்லிங்",
+  "nav.service": "சேவை மேசை",
 
   // ── Apps Launcher ──────────────────────────────────────────────────────────
   "apps.searchPlaceholder": "செயலிகளை தேடவும்…",

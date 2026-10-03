@@ -549,6 +549,21 @@ export function POViewerModal({
         </div>
       )}
 
+      {/* ─── DYNAMIC PRINT PAGE STYLES ─── */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait !important;
+            margin: 8mm 8mm 8mm 8mm !important;
+          }
+          html, body {
+            width: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
+
       {/* ─── PRINT ONLY CONTAINER ─── */}
       <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:z-[9999]">
         {order && (

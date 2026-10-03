@@ -83,7 +83,14 @@ function startServerProcess(): Promise<string> {
 }
 
 async function createWindow() {
-  const iconPath = path.join(app.getAppPath(), 'public/ponmani-logo-icon.ico');
+  const iconCandidates = [
+    path.join(app.getAppPath(), 'public', 'ponmani-logo-icon.ico'),
+    path.join(app.getAppPath(), 'dist', 'ponmani-logo-icon.ico'),
+    path.join(__dirname, '..', 'public', 'ponmani-logo-icon.ico'),
+    path.join(__dirname, '..', 'dist', 'ponmani-logo-icon.ico'),
+    path.join(process.resourcesPath || '', 'public', 'ponmani-logo-icon.ico'),
+  ];
+  const iconPath = iconCandidates.find((p) => fs.existsSync(p));
 
   mainWindow = new BrowserWindow({
     width: 1366,

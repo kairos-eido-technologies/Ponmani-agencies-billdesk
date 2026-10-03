@@ -189,8 +189,8 @@
 
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 8mm 8mm 8mm 8mm;
+    size: auto;
+    margin: 0mm;
   }
 
   /* Force entire DOM root, app shell, and background surfaces to pure white in print */
@@ -207,14 +207,14 @@
   }
 
   /* Reset body & html to natural unclipped height */
-  html, body {
+  html, body, #root, main, .min-h-screen {
     background: #ffffff !important;
     background-color: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
     overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
@@ -226,12 +226,12 @@
     display: none !important;
   }
 
-  /* 80mm Thermal Receipt Spec */
+  /* 80mm / 72mm Thermal Receipt Spec (70mm content for zero right-side clipping) */
   .thermal-receipt {
-    width: 78mm !important;
-    max-width: 78mm !important;
+    width: 70mm !important;
+    max-width: 70mm !important;
     margin: 0 auto !important;
-    padding: 2mm !important;
+    padding: 1.5mm 1mm 0mm 1mm !important;
     font-family: 'Courier New', Courier, monospace !important;
     font-size: 11px !important;
     line-height: 1.35 !important;
@@ -240,15 +240,21 @@
     background-color: #ffffff !important;
     overflow: visible !important;
     height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
 
-  /* Force clean black text for thermal receipts */
+  /* Force deep bold black text for thermal receipts */
+  .thermal-receipt,
   .thermal-receipt * {
     color: #000000 !important;
+    font-weight: 700 !important;
     border-color: #000000 !important;
     text-shadow: none !important;
     box-shadow: none !important;
+    -webkit-text-stroke: 0.2px #000000 !important;
   }
 
   /* A4 Document Print Spec (GST Report, A4 Invoices, A4 POs) */

@@ -6,8 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "./dashboard";
 import { inr, qty } from "@/lib/format";
-import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2, Calculator, Tag } from "lucide-react";
+import { Plus, X, Pencil, Download, Upload, FileSpreadsheet, AlertCircle, CheckCircle, Printer, Image, RefreshCw, Barcode, TrendingUp, TrendingDown, DollarSign, Store, Warehouse, Scale, Trash2, Calculator, Tag, Scissors } from "lucide-react";
 import { useT } from "@/lib/lang/lang-context";
+import { printIsolatedLabels } from "@/lib/print-isolated-receipt";
 
 export const Route = createFileRoute("/_authenticated/inventory")({ component: InventoryPage });
 
@@ -1172,60 +1173,248 @@ function ProductModal({ product, onClose, onSaved }: { product: InventoryItem | 
   );
 }
 
-function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClose: () => void }) {
-  function handlePrintLabel() {
-    window.print();
+function generateBarcodeSvg(code: string, height: number = 20, maxW: string = "140px"): string {
+  const clean = (code || "PMA000").toUpperCase();
+  const bars: boolean[] = [];
+  for (let i = 0; i < clean.length; i++) {
+    const charCode = clean.charCodeAt(i);
+    bars.push(true, (charCode % 2 === 0), false, true, (charCode % 3 === 0), true, false);
   }
+  const rects = bars.map((b, idx) =>
+    b ? `<rect x="${(idx * (160 / bars.length)).toFixed(2)}" y="1" width="${((160 / bars.length) * 0.9).toFixed(2)}" height="28" fill="black" />` : ''
+  ).join('');
+
+  return `<svg style="width: 100%; height: ${height}px; max-width: ${maxW};" viewBox="0 0 160 30" preserveAspectRatio="none"><rect width="160" height="30" fill="white" />${rects}</svg>`;
+}
+
+function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClose: () => void }) {
+  const [sheetCount, setSheetCount] = useState<number>(1);
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
 
   const barcodeCode = product.barcode || product.sku_code || generatePmaBarcode();
   const mrpVal = product.mrp && product.mrp > 0 ? product.mrp : product.selling_price;
+  const totalStickers = sheetCount * 2;
+
+  function renderSingleMiniLabel(isPrint: boolean = false) {
+    return (
+      <div
+        className={`flex flex-col justify-between items-center text-center p-1 box-border overflow-hidden bg-white text-black font-sans ${
+          isPrint ? "h-[25mm] max-h-[25mm] w-[50mm]" : "h-full w-full"
+        }`}
+        style={{ color: "#000000", WebkitTextStroke: "0.15px #000000" }}
+      >
+        <div className="w-full">
+          <div className="text-[7.5px] font-black uppercase tracking-wider text-black leading-none">
+            PONMANI AGENCIES
+          </div>
+          <div className="text-[8.5px] font-black truncate leading-tight text-black mt-0.5" title={product.name}>
+            {product.name}
+          </div>
+        </div>
+
+        {/* MRP & SP */}
+        <div className="flex items-center justify-center gap-2 font-mono text-[8px] font-black py-0.5 text-black">
+          <span>MRP: ₹{mrpVal.toFixed(0)}</span>
+          <span className="font-extrabold text-[9px]">SP: ₹{product.selling_price.toFixed(0)}</span>
+        </div>
+
+        {/* Barcode Lines */}
+        <div className="w-full flex justify-center py-0.5">
+          <BarcodeVisual code={barcodeCode} height={18} />
+        </div>
+
+        {/* Barcode String */}
+        <div className="text-[7.5px] font-mono font-black tracking-widest text-black leading-none">
+          *{barcodeCode}*
+        </div>
+      </div>
+    );
+  }
+
+  function handlePrintLabel() {
+    if (isPrinting) return;
+    setIsPrinting(true);
+
+    try {
+      const miniBarcodeSvg = generateBarcodeSvg(barcodeCode, 18, "130px");
+
+      const singleMiniHtml = `
+        <div style="width: 50mm; height: 100%; max-height: 25mm; box-sizing: border-box; padding: 1mm 1.5mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; background: #ffffff; color: #000000; overflow: hidden; font-family: Arial, Helvetica, sans-serif;">
+          <div style="width: 100%; line-height: 1.1;">
+            <div style="font-size: 7.5px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #000000; -webkit-text-stroke: 0.15px #000;">PONMANI AGENCIES</div>
+            <div style="font-size: 8.5px; font-weight: 900; line-height: 1.1; max-width: 48mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000000; margin-top: 1px; -webkit-text-stroke: 0.15px #000;">${product.name}</div>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: center; align-items: center; font-family: monospace; font-size: 8px; font-weight: 900; color: #000000; line-height: 1;">
+            <span>MRP: ₹${mrpVal.toFixed(0)}</span>
+            <span style="font-size: 9px; font-weight: 900; -webkit-text-stroke: 0.2px #000;">SP: ₹${product.selling_price.toFixed(0)}</span>
+          </div>
+          <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
+            ${miniBarcodeSvg}
+          </div>
+          <div style="font-family: monospace; font-size: 7.5px; font-weight: 900; letter-spacing: 0.15em; color: #000000; line-height: 1;">*${barcodeCode}*</div>
+        </div>
+      `.trim();
+
+      const sheetsList: string[] = [];
+      for (let s = 0; s < sheetCount; s++) {
+        sheetsList.push(
+          `<div class="label-sheet" style="width: 100mm; height: 25mm; max-height: 25mm; display: grid; grid-template-columns: 50mm 50mm; grid-template-rows: 25mm; box-sizing: border-box; background: #ffffff; color: #000000; overflow: hidden;"><div style="width: 50mm; height: 25mm; max-height: 25mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div><div style="width: 50mm; height: 25mm; max-height: 25mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div></div>`
+        );
+      }
+
+      printIsolatedLabels(sheetsList.join(""), 100, 25);
+    } finally {
+      setTimeout(() => {
+        setIsPrinting(false);
+      }, 1500);
+    }
+  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm card-surface p-5 border-l-4 border-l-primary space-y-4">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-3 sm:p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg card-surface p-5 border-l-4 border-l-primary space-y-4 shadow-2xl rounded-xl">
+        {/* Header */}
         <div className="flex justify-between items-center pb-2 border-b border-border">
           <div className="text-base font-bold text-foreground flex items-center gap-2">
-            <Barcode className="h-5 w-5 text-primary" /> Thermal Barcode Label
+            <Barcode className="h-5 w-5 text-primary" /> Barcode Printer (4" × 1" Roll)
           </div>
-          <button onClick={onClose}><X className="h-4 w-4 text-muted-foreground hover:text-foreground" /></button>
+          <button onClick={onClose} className="h-7 w-7 rounded-lg hover:bg-muted text-muted-foreground flex items-center justify-center">
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* 50mm x 25mm Thermal Label Sticker Preview */}
-        <div className="p-4 bg-white text-black rounded border border-gray-300 shadow-md text-center space-y-1 print:border-0 print:p-2 print:shadow-none font-sans">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-700">Ponmani Agencies</div>
-          <div className="text-sm font-black truncate leading-tight text-gray-900">{product.name}</div>
-          
-          {/* MRP & Selling Price */}
-          <div className="flex items-center justify-center gap-3 font-mono py-0.5">
-            <span className="text-xs text-gray-600 font-semibold">MRP: ₹ {mrpVal.toFixed(2)}</span>
-            <span className="text-base font-extrabold text-black">SP: ₹ {product.selling_price.toFixed(2)}</span>
+        {/* Product Details Header */}
+        <div className="bg-secondary/40 p-2.5 rounded-lg border border-border flex items-center justify-between">
+          <div className="min-w-0 pr-2">
+            <div className="text-xs font-bold text-foreground truncate">{product.name}</div>
+            <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-2 mt-0.5">
+              <span>Barcode: <strong className="text-foreground">{barcodeCode}</strong></span>
+              <span>•</span>
+              <span>MRP: ₹{mrpVal.toFixed(0)}</span>
+              <span>•</span>
+              <span className="text-primary font-bold">SP: ₹{product.selling_price.toFixed(0)}</span>
+            </div>
           </div>
-
-          {/* Visual Barcode SVG */}
-          <div className="py-1 flex justify-center">
-            <BarcodeVisual code={barcodeCode} />
-          </div>
-
-          <div className="text-[10px] font-mono font-bold text-gray-800 flex justify-between px-2">
-            <span>BARCODE: {barcodeCode}</span>
-            <span>SKU: {product.sku_code || barcodeCode}</span>
+          <div className="shrink-0 text-right">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+              2 Per Row (2" × 1")
+            </span>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="h-9 px-3 rounded bg-secondary border border-border text-xs font-semibold text-foreground">
-            Cancel
-          </button>
-          <button onClick={handlePrintLabel} className="h-9 px-4 rounded bg-primary text-primary-foreground font-bold text-xs flex items-center gap-1.5 hover:accent-glow">
-            <Printer className="h-3.5 w-3.5" /> Print Thermal Sticker
-          </button>
+        {/* Visual Preview Frame (4" x 1" aspect ratio, 2 stickers side-by-side) */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center text-[10px] text-muted-foreground font-mono">
+            <span>Roll Size: 4" × 1" (100mm × 25mm)</span>
+            <span className="text-primary font-bold">
+              2 Stickers Side-by-Side (2" × 1" each)
+            </span>
+          </div>
+
+          <div className="bg-slate-200 dark:bg-zinc-800 p-3 rounded-lg border border-border flex justify-center">
+            <div className="w-[360px] h-[90px] bg-white rounded border-2 border-black shadow-md grid grid-cols-2 relative overflow-hidden">
+              {/* Left Sticker */}
+              <div className="border-r border-dashed border-gray-400 overflow-hidden">
+                {renderSingleMiniLabel()}
+              </div>
+              {/* Right Sticker */}
+              <div className="overflow-hidden">
+                {renderSingleMiniLabel()}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quantity Controls */}
+        <div className="bg-secondary/50 p-3 rounded-lg border border-border space-y-2">
+          <div className="flex justify-between items-center">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Quantity to Print
+            </label>
+            <span className="font-mono text-xs font-bold text-primary">
+              {totalStickers} stickers ({sheetCount} {sheetCount === 1 ? "row" : "rows"})
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSheetCount(Math.max(1, sheetCount - 1))}
+              className="h-8 w-9 rounded-lg bg-background hover:bg-muted border border-border font-bold flex items-center justify-center text-base"
+            >
+              -
+            </button>
+            <div className="flex-1 flex items-center justify-center gap-1 bg-background px-3 py-1.5 rounded-lg border border-border">
+              <input
+                type="number"
+                min="1"
+                max="500"
+                value={sheetCount}
+                onChange={(e) => setSheetCount(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-16 text-center font-mono font-bold text-sm bg-transparent outline-none text-foreground"
+              />
+              <span className="text-xs text-muted-foreground font-medium">
+                {sheetCount === 1 ? "Row (2 pcs)" : "Rows (" + totalStickers + " pcs)"}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSheetCount(sheetCount + 1)}
+              className="h-8 w-9 rounded-lg bg-background hover:bg-muted border border-border font-bold flex items-center justify-center text-base"
+            >
+              +
+            </button>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex items-center gap-1.5 pt-1">
+            <span className="text-[10px] text-muted-foreground mr-1">Quick:</span>
+            {[1, 2, 5, 10, 25].map((count) => (
+              <button
+                key={count}
+                type="button"
+                onClick={() => setSheetCount(count)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition ${
+                  sheetCount === count
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:text-foreground"
+                }`}
+              >
+                {count * 2} pcs ({count}r)
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Modal Actions */}
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div className="text-[11px] text-muted-foreground font-mono">
+            Print target: <strong className="text-foreground">TVS LP 46 NEO / 4"×1" Thermal</strong>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="h-9 px-3 rounded-lg bg-secondary border border-border text-xs font-semibold text-foreground hover:bg-muted transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handlePrintLabel}
+              disabled={isPrinting}
+              className={`h-9 px-4 rounded-lg bg-primary text-primary-foreground font-bold text-xs flex items-center gap-1.5 shadow transition ${
+                isPrinting ? "opacity-60 cursor-not-allowed" : "hover:opacity-90"
+              }`}
+            >
+              <Printer className="h-4 w-4" /> {isPrinting ? "Printing..." : `Print ${totalStickers} Labels`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function BarcodeVisual({ code }: { code: string }) {
+function BarcodeVisual({ code, height = 22 }: { code: string; height?: number }) {
   const clean = code.toUpperCase();
   const bars: boolean[] = [];
   for (let i = 0; i < clean.length; i++) {
@@ -1234,16 +1423,16 @@ function BarcodeVisual({ code }: { code: string }) {
   }
 
   return (
-    <svg className="w-full h-10 max-w-[220px]" viewBox="0 0 200 40">
-      <rect width="200" height="40" fill="white" />
+    <svg className="w-full" style={{ height: `${height}px`, maxWidth: "160px" }} viewBox="0 0 160 30" preserveAspectRatio="none">
+      <rect width="160" height="30" fill="white" />
       {bars.map((b, idx) =>
         b ? (
           <rect
             key={idx}
-            x={idx * (200 / bars.length)}
-            y="2"
-            width={(200 / bars.length) * 0.85}
-            height="36"
+            x={idx * (160 / bars.length)}
+            y="1"
+            width={(160 / bars.length) * 0.9}
+            height="28"
             fill="black"
           />
         ) : null

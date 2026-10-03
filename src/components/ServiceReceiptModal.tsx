@@ -4,11 +4,52 @@ import { inr } from "@/lib/format";
 import { Printer, X, Share2, Phone, Image as ImageIcon, Send, Clipboard, Check } from "lucide-react";
 import { toast } from "sonner";
 import { captureReceiptAsImage } from "@/lib/capture-receipt-image";
+import { printIsolatedReceipt } from "@/lib/print-isolated-receipt";
 import { PonmaniLogo } from "./PonmaniLogo";
 
 interface ServiceReceiptModalProps {
   ticket: ServiceTicket;
   onClose: () => void;
+}
+
+/**
+ * Generate SVG Barcode lines for Ticket Number representation
+ */
+function SimpleBarcodeSVG({ value }: { value: string }) {
+  const lines: number[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    lines.push((code % 3) + 1, ((code * 7) % 3) + 1, ((code * 13) % 2) + 1);
+  }
+
+  let currentX = 10;
+  const rects: { x: number; width: number }[] = [];
+
+  lines.forEach((w) => {
+    rects.push({ x: currentX, width: w });
+    currentX += w + ((w % 2) + 1);
+  });
+
+  const totalWidth = currentX + 10;
+
+  return (
+    <div className="flex flex-col items-center my-2">
+      <svg
+        width={Math.min(totalWidth, 220)}
+        height="32"
+        viewBox={`0 0 ${totalWidth} 32`}
+        className="max-w-full"
+      >
+        <rect width={totalWidth} height="32" fill="#ffffff" />
+        {rects.map((r, idx) => (
+          <rect key={idx} x={r.x} y="2" width={r.width} height="28" fill="#000000" />
+        ))}
+      </svg>
+      <div className="font-mono text-[9px] tracking-widest uppercase font-black text-black mt-0.5">
+        *{value}*
+      </div>
+    </div>
+  );
 }
 
 export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProps) {
@@ -27,6 +68,15 @@ export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProp
   const ticketTerms =
     storeSettings?.service_ticket_terms ||
     "* Present this receipt token when collecting item.\n* Items left over 30 days are subject to shop terms.\n*** THANK YOU FOR YOUR BUSINESS ***";
+
+  function handlePrint() {
+    const el = (receiptRef.current?.querySelector(".thermal-receipt") as HTMLElement) || receiptRef.current;
+    if (el) {
+      printIsolatedReceipt(el, "thermal");
+      return;
+    }
+    window.print();
+  }
 
   function generateWhatsAppText(): string {
     let t = `*SERVICE RECEIPT & QUEUE TOKEN*\n`;
@@ -68,7 +118,10 @@ export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProp
   }
 
   async function handleShareImage() {
-    if (!receiptRef.current) { toast.error("Receipt element unavailable"); return; }
+    if (!receiptRef.current) {
+      toast.error("Receipt element unavailable");
+      return;
+    }
     try {
       setIsExporting(true);
       toast.info("Generating service receipt image...");
@@ -92,22 +145,17 @@ export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProp
     }
   }
 
+  const intakeDateStr = new Date(ticket.created_at).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
   return (
     <>
-      {/* ─── PRINT STYLES ─── */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #thermal-service-receipt, #thermal-service-receipt * { visibility: visible; }
-          #thermal-service-receipt {
-            position: absolute; left: 0; top: 0;
-            width: 80mm !important; max-width: 80mm !important;
-            padding: 2mm !important; margin: 0 !important;
-            font-size: 11px !important; color: #000 !important; background: #fff !important;
-          }
-        }
-      `}</style>
-
       {/* ─── MODAL BACKDROP ─── */}
       <div
         className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm grid place-items-center p-4 print:hidden"
@@ -136,102 +184,107 @@ export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProp
           {/* ─── Scrollable Receipt Body ─── */}
           <div className="p-4 sm:p-6 pb-6 overflow-y-auto flex-1 flex justify-center bg-zinc-900/50">
             <div ref={receiptRef} className="shadow-2xl rounded overflow-visible border border-gray-300 bg-white mb-4 pb-2">
-              {/* This is the actual 80mm thermal receipt */}
+              {/* 70mm Isolated Bold Thermal Receipt */}
               <div
                 id="thermal-service-receipt"
-                className="thermal-receipt bg-white text-black p-3 mx-auto select-none"
+                className="thermal-receipt bg-white text-black p-2 pb-0 mx-auto select-none"
                 style={{
-                  width: "80mm",
-                  maxWidth: "100%",
+                  width: "70mm",
+                  maxWidth: "70mm",
                   fontFamily: "'Courier New', Courier, monospace",
-                  fontSize: "11px",
+                  fontSize: "10.5px",
                   lineHeight: "1.35",
-                  color: "#000",
+                  color: "#000000",
+                  fontWeight: "bold",
+                  boxSizing: "border-box",
+                  WebkitTextStroke: "0.2px #000000",
                 }}
               >
                 {/* ─── Branding Header ─── */}
-                <div className="text-center pb-2 mb-2 border-b-2 border-dashed border-black flex flex-col items-center">
+                <div className="text-center pb-2 mb-2 border-b-2 border-dashed border-black flex flex-col items-center font-bold text-black">
                   <PonmaniLogo variant="bw" className="h-20 w-auto mx-auto mb-1" />
-                  <div className="text-[9.5px] font-bold tracking-tight uppercase">{headerTagline}</div>
-                  <div className="text-[9px] mt-0.5">{shopAddress}</div>
-                  <div className="text-[9px] font-semibold">Ph: {shopPhone}</div>
+                  <div className="text-[10px] font-black tracking-tight uppercase text-black">{headerTagline}</div>
+                  <div className="text-[9.5px] font-bold mt-0.5 text-black">{shopAddress}</div>
+                  <div className="text-[9.5px] font-bold text-black">Ph: {shopPhone}</div>
                   {shopGst && (
-                    <div className="text-[9px] font-bold mt-0.5 border border-black px-1.5 py-0.5 inline-block">
+                    <div className="text-[9.5px] font-black mt-0.5 border border-black px-1.5 py-0.5 inline-block text-black">
                       GSTIN: {shopGst}
                     </div>
                   )}
                 </div>
 
-                {/* ─── Queue Token Block ─── */}
-                <div className="bg-black text-white p-2 rounded text-center mb-2">
-                  <div className="text-[8px] uppercase tracking-widest text-gray-400 mb-0.5">SERVICE QUEUE TOKEN</div>
-                  <div className="text-3xl font-black tracking-wider" style={{ fontFamily: "Arial, sans-serif" }}>
+                {/* ─── Queue Token Box ─── */}
+                <div className="border-2 border-black p-1.5 text-center mb-2 text-black bg-white">
+                  <div className="text-[8px] uppercase tracking-widest font-black text-black">SERVICE QUEUE TOKEN</div>
+                  <div className="text-2xl font-black tracking-wider text-black my-0.5" style={{ fontFamily: "Arial, sans-serif" }}>
                     {ticket.queue_number || "TOKEN #01"}
                   </div>
-                  <div className="text-[10px] font-mono font-bold text-yellow-300 mt-0.5">
+                  <div className="text-[10px] font-mono font-black text-black">
                     TICKET #: {ticket.ticket_number}
                   </div>
                 </div>
 
                 {/* ─── Customer & Intake ─── */}
-                <div className="text-[10px] space-y-0.5 pb-2 mb-2 border-b border-dashed border-gray-500">
+                <div className="text-[10px] font-bold text-black space-y-0.5 pb-2 mb-2 border-b-2 border-black">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Intake Time:</span>
-                    <span className="font-bold">
-                      {new Date(ticket.created_at).toLocaleDateString("en-IN")}{" "}
-                      {new Date(ticket.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
+                    <span>Intake Time:</span>
+                    <span className="font-bold text-black">{intakeDateStr}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Customer:</span>
-                    <span className="font-bold">{ticket.customer_name}</span>
+                    <span>Customer:</span>
+                    <span className="font-black text-black">{ticket.customer_name}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Mobile:</span>
-                    <span className="font-bold font-mono">{ticket.customer_mobile || "N/A"}</span>
+                    <span>Mobile:</span>
+                    <span className="font-mono font-bold text-black">{ticket.customer_mobile || "N/A"}</span>
                   </div>
                 </div>
 
                 {/* ─── Device & Serial ─── */}
-                <div className="bg-gray-100 p-2 rounded border border-gray-300 text-[10px] mb-2">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-gray-600 font-bold">Device / Model:</span>
+                <div className="border border-black p-1.5 text-[10px] font-bold text-black mb-2 space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Device/Model:</span>
                     <span className="font-black text-black text-right max-w-[55%] break-words">{ticket.device_name}</span>
                   </div>
-                  <div className="flex justify-between bg-yellow-100 px-1 py-0.5 rounded font-mono">
-                    <span className="text-gray-800 font-bold">Serial No (S/N):</span>
-                    <span className="font-black text-black">{ticket.serial_number || "N/A"}</span>
-                  </div>
+                  {ticket.serial_number && (
+                    <div className="flex justify-between font-mono">
+                      <span>Serial No:</span>
+                      <span className="font-black text-black">{ticket.serial_number}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* ─── Reported Issue ─── */}
-                <div className="text-[10px] pb-2 mb-2 border-b border-dashed border-gray-500">
-                  <div className="text-[8.5px] uppercase font-bold text-gray-600 mb-1">Reported Issue / Symptoms:</div>
-                  <div className="bg-gray-50 border border-gray-200 rounded p-1.5 font-semibold" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                <div className="text-[10px] pb-2 mb-2 border-b-2 border-dashed border-black font-bold text-black">
+                  <div className="text-[9px] uppercase font-black text-black mb-0.5">Reported Issue / Symptoms:</div>
+                  <div className="border border-black p-1 font-bold text-black text-[9.5px]" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                     {ticket.issue_description || "General Service & Repair Checkup"}
                   </div>
                 </div>
 
                 {/* ─── Cost & Status ─── */}
-                <div className="text-[10px] space-y-1 pb-2 mb-2 border-b border-dashed border-gray-500">
-                  <div className="flex justify-between">
-                    <span className="text-gray-700">Est. Repair Cost:</span>
+                <div className="text-[10px] space-y-0.5 pb-2 mb-2 border-b-2 border-black font-bold text-black">
+                  <div className="flex justify-between font-bold">
+                    <span>Est. Repair Cost:</span>
                     <span className="font-bold font-mono">{inr(ticket.estimated_cost)}</span>
                   </div>
                   {ticket.final_cost > 0 && (
-                    <div className="flex justify-between font-bold border-t border-gray-300 pt-1">
+                    <div className="flex justify-between font-black border-t border-black pt-1 text-[11px]">
                       <span>Final Amount:</span>
                       <span className="font-mono font-black">{inr(ticket.final_cost)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between font-bold text-[9px] uppercase border-t border-dashed border-gray-400 pt-1">
+                  <div className="flex justify-between font-black text-[9.5px] uppercase border-t border-dashed border-black pt-1">
                     <span>Status:</span>
-                    <span className="bg-blue-100 text-blue-900 px-1.5 py-0.5 rounded">{ticket.status}</span>
+                    <span className="border border-black px-1.5 py-0.2 rounded-xs">{ticket.status}</span>
                   </div>
                 </div>
 
+                {/* ─── Barcode for Fast Scanner Recall ─── */}
+                <SimpleBarcodeSVG value={ticket.ticket_number} />
+
                 {/* ─── Footer Terms ─── */}
-                <div className="text-center border-t-2 border-dashed border-black pt-2 text-[8.5px] text-gray-700 space-y-0.5 leading-tight whitespace-pre-line">
+                <div className="text-center border-t-2 border-dashed border-black pt-2 text-[8.5px] font-bold text-black space-y-0.5 leading-tight whitespace-pre-line">
                   {ticketTerms}
                 </div>
               </div>
@@ -251,10 +304,10 @@ export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProp
                 <Share2 className="h-4 w-4" /> Share WhatsApp
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={handlePrint}
                 className="h-9 px-4 rounded-lg bg-primary hover:opacity-90 text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow transition"
               >
-                <Printer className="h-4 w-4" /> Print
+                <Printer className="h-4 w-4" /> Print Service Bill
               </button>
             </div>
           </div>
@@ -301,7 +354,7 @@ export function ServiceReceiptModal({ ticket, onClose }: ServiceReceiptModalProp
               </div>
 
               <div className="space-y-2 pt-1">
-                {/* Image (Recommended) */}
+                {/* Image */}
                 <button
                   disabled={isExporting}
                   onClick={handleShareImage}

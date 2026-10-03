@@ -6,6 +6,7 @@ import { A4Receipt } from "./A4Receipt";
 import { Printer, Download, X, FileText, Receipt, Check, Share2, Phone, MessageSquare, Clipboard, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { captureReceiptAsImage } from "@/lib/capture-receipt-image";
+import { printIsolatedReceipt } from "@/lib/print-isolated-receipt";
 
 interface BillViewerModalProps {
   invoiceId?: string;
@@ -106,12 +107,29 @@ export function BillViewerModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  function handlePrint() {
+    if (mode === "thermal") {
+      const el = (receiptRef.current?.querySelector(".thermal-receipt") as HTMLElement) || receiptRef.current;
+      if (el) {
+        printIsolatedReceipt(el, "thermal");
+        return;
+      }
+    } else {
+      const el = (a4ReceiptRef.current?.querySelector(".a4-sheet") as HTMLElement) || a4ReceiptRef.current;
+      if (el) {
+        printIsolatedReceipt(el, "a4");
+        return;
+      }
+    }
+    window.print();
+  }
+
   // Auto-print option if requested (e.g. from POS checkout)
   useEffect(() => {
     if (autoPrintOnMount && invoiceObj && !hasAutoPrinted.current) {
       hasAutoPrinted.current = true;
       const t = setTimeout(() => {
-        window.print();
+        handlePrint();
       }, 400);
       return () => clearTimeout(t);
     }
@@ -122,10 +140,6 @@ export function BillViewerModal({
       setWhatsappPhone(invoiceObj.customer_mobile);
     }
   }, [invoiceObj]);
-
-  function handlePrint() {
-    window.print();
-  }
 
   function handleDownload() {
     if (!invoiceObj) return;
@@ -479,8 +493,70 @@ export function BillViewerModal({
         </div>
       )}
 
+      {/* ─── DYNAMIC PRINT PAGE STYLES ─── */}
+      {mode === "thermal" ? (
+        <style>{`
+          @media print {
+            @page {
+              size: 72mm auto !important;
+              margin: 0mm !important;
+            }
+            html, body {
+              width: 70mm !important;
+              max-width: 70mm !important;
+              height: auto !important;
+              min-height: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              overflow: visible !important;
+            }
+            #root, main, .min-h-screen {
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+            }
+            .thermal-receipt {
+              width: 70mm !important;
+              max-width: 70mm !important;
+              margin: 0 auto !important;
+              padding: 1.5mm 1mm 0mm 1mm !important;
+              height: auto !important;
+              min-height: 0 !important;
+              page-break-after: avoid !important;
+              break-after: avoid !important;
+            }
+            .thermal-receipt,
+            .thermal-receipt * {
+              color: #000000 !important;
+              font-weight: 700 !important;
+              border-color: #000000 !important;
+              -webkit-text-stroke: 0.2px #000000 !important;
+            }
+          }
+        `}</style>
+      ) : (
+        <style>{`
+          @media print {
+            @page {
+              size: A4 portrait !important;
+              margin: 8mm 8mm 8mm 8mm !important;
+            }
+            html, body {
+              width: auto !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+          }
+        `}</style>
+      )}
+
       {/* ─── PRINT ONLY CONTAINER ─── */}
-      <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:z-[9999]">
+      <div className={`hidden print:block print:bg-white ${
+        mode === "thermal"
+          ? "print:static print:w-[70mm] print:h-auto print:m-0 print:p-0 print:overflow-visible"
+          : "print:fixed print:inset-0 print:z-[9999]"
+      }`}>
         {invoiceObj && (
           mode === "thermal" ? (
             <ThermalReceipt invoice={invoiceObj} items={items} storeSettings={storeSettings} />

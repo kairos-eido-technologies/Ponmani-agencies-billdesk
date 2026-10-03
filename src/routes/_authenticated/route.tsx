@@ -120,7 +120,7 @@ function Shell() {
                 title="POS Billing"
               >
                 <ShoppingCart className="h-3.5 w-3.5" />
-                <span>{t("nav.pos") || "POS Billing"}</span>
+                <span>{t("nav.pos", "POS Billing")}</span>
               </Link>
               <Link
                 to="/service"
@@ -132,7 +132,7 @@ function Shell() {
                 title="Service Desk"
               >
                 <Wrench className="h-3.5 w-3.5" />
-                <span>{t("nav.service") || "Service Desk"}</span>
+                <span>{t("nav.service", "Service Desk")}</span>
               </Link>
             </div>
           ) : (

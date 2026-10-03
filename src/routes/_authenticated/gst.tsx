@@ -1161,6 +1161,19 @@ function GSTPage() {
           </div>
 
           {/* Dedicated Clean Print Container for Browser Print / Save as PDF */}
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait !important;
+                margin: 8mm 8mm 8mm 8mm !important;
+              }
+              html, body {
+                width: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+            }
+          `}</style>
           <div className="hidden print:block print:w-full print:bg-white print:m-0 print:p-0">
             <GSTReportDocument data={buildReportData()} />
           </div>
