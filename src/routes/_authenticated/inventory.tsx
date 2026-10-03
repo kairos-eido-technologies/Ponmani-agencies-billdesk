@@ -1187,15 +1187,20 @@ function generateBarcodeSvg(code: string, height: number = 20, maxW: string = "1
   return `<svg style="width: 100%; height: ${height}px; max-width: ${maxW};" viewBox="0 0 160 30" preserveAspectRatio="none"><rect width="160" height="30" fill="white" />${rects}</svg>`;
 }
 
+type LabelFormat = "50x25" | "34x20";
+
 function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClose: () => void }) {
+  const [labelFormat, setLabelFormat] = useState<LabelFormat>("50x25");
   const [sheetCount, setSheetCount] = useState<number>(1);
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
 
   const barcodeCode = product.barcode || product.sku_code || generatePmaBarcode();
+  const skuCode = product.sku_code || product.barcode || barcodeCode;
   const mrpVal = product.mrp && product.mrp > 0 ? product.mrp : product.selling_price;
-  const totalStickers = sheetCount * 2;
+  const stickersPerRow = labelFormat === "34x20" ? 3 : 2;
+  const totalStickers = sheetCount * stickersPerRow;
 
-  function renderSingleMiniLabel(isPrint: boolean = false) {
+  function renderSingle50x25Label(isPrint: boolean = false) {
     return (
       <div
         className={`flex flex-col justify-between items-center text-center p-1 box-border overflow-hidden bg-white text-black font-sans ${
@@ -1212,20 +1217,54 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
           </div>
         </div>
 
-        {/* MRP & SP */}
-        <div className="flex items-center justify-center gap-2 font-mono text-[8px] font-black py-0.5 text-black">
+        {/* MRP & SP (Symmetrically Aligned on the exact same baseline) */}
+        <div className="w-full flex items-baseline justify-center gap-3 font-mono text-[8.5px] font-black py-0.5 text-black leading-none">
           <span>MRP: ₹{mrpVal.toFixed(0)}</span>
-          <span className="font-extrabold text-[9px]">SP: ₹{product.selling_price.toFixed(0)}</span>
+          <span>SP: ₹{product.selling_price.toFixed(0)}</span>
         </div>
 
         {/* Barcode Lines */}
         <div className="w-full flex justify-center py-0.5">
-          <BarcodeVisual code={barcodeCode} height={18} />
+          <BarcodeVisual code={barcodeCode} height={18} maxW="130px" />
         </div>
 
-        {/* Barcode String */}
-        <div className="text-[7.5px] font-mono font-black tracking-widest text-black leading-none">
-          *{barcodeCode}*
+        {/* SKU Code at bottom (direct SKU code without prefix) */}
+        <div className="text-[7.5px] font-mono font-black tracking-wider text-black leading-none">
+          {skuCode}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSingle34x20Label() {
+    return (
+      <div
+        className="flex flex-col justify-between items-center text-center p-0.5 box-border overflow-hidden bg-white text-black font-sans h-full w-full"
+        style={{ color: "#000000", WebkitTextStroke: "0.1px #000000" }}
+      >
+        <div className="w-full">
+          <div className="text-[6.8px] font-black uppercase tracking-tight text-black leading-none">
+            PONMANI AGENCIES
+          </div>
+          <div className="text-[7.2px] font-black truncate leading-tight text-black mt-0.5" title={product.name}>
+            {product.name}
+          </div>
+        </div>
+
+        {/* MRP & SP (Symmetrically Aligned on the exact same baseline) */}
+        <div className="w-full flex items-baseline justify-center gap-2 font-mono text-[7px] font-black py-0.5 text-black leading-none">
+          <span>MRP: ₹{mrpVal.toFixed(0)}</span>
+          <span>SP: ₹{product.selling_price.toFixed(0)}</span>
+        </div>
+
+        {/* Barcode Lines */}
+        <div className="w-full flex justify-center py-0.5">
+          <BarcodeVisual code={barcodeCode} height={13} maxW="90px" />
+        </div>
+
+        {/* SKU Code at bottom (direct SKU code without prefix) */}
+        <div className="text-[6.5px] font-mono font-black tracking-wider text-black leading-none truncate max-w-[32mm]">
+          {skuCode}
         </div>
       </div>
     );
@@ -1236,33 +1275,63 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
     setIsPrinting(true);
 
     try {
-      const miniBarcodeSvg = generateBarcodeSvg(barcodeCode, 18, "130px");
+      if (labelFormat === "34x20") {
+        const miniBarcodeSvg = generateBarcodeSvg(barcodeCode, 13, "90px");
 
-      const singleMiniHtml = `
-        <div style="width: 50mm; height: 100%; max-height: 25mm; box-sizing: border-box; padding: 1mm 1.5mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; background: #ffffff; color: #000000; overflow: hidden; font-family: Arial, Helvetica, sans-serif;">
-          <div style="width: 100%; line-height: 1.1;">
-            <div style="font-size: 7.5px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #000000; -webkit-text-stroke: 0.15px #000;">PONMANI AGENCIES</div>
-            <div style="font-size: 8.5px; font-weight: 900; line-height: 1.1; max-width: 48mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000000; margin-top: 1px; -webkit-text-stroke: 0.15px #000;">${product.name}</div>
+        const singleMiniHtml = `
+          <div style="width: 34mm; height: 100%; max-height: 20mm; box-sizing: border-box; padding: 0.8mm 1mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; background: #ffffff; color: #000000; overflow: hidden; font-family: Arial, Helvetica, sans-serif;">
+            <div style="width: 100%; line-height: 1;">
+              <div style="font-size: 6.8px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; color: #000000; -webkit-text-stroke: 0.1px #000;">PONMANI AGENCIES</div>
+              <div style="font-size: 7.2px; font-weight: 900; line-height: 1; max-width: 32mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000000; margin-top: 0.5px; -webkit-text-stroke: 0.1px #000;">${product.name}</div>
+            </div>
+            <div style="width: 100%; display: flex; justify-content: center; align-items: baseline; gap: 6px; font-family: monospace; font-size: 7px; font-weight: 900; color: #000000; line-height: 1; -webkit-text-stroke: 0.1px #000;">
+              <span>MRP: ₹${mrpVal.toFixed(0)}</span>
+              <span>SP: ₹${product.selling_price.toFixed(0)}</span>
+            </div>
+            <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
+              ${miniBarcodeSvg}
+            </div>
+            <div style="font-family: monospace; font-size: 6.5px; font-weight: 900; letter-spacing: 0.05em; color: #000000; line-height: 1; max-width: 32mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${skuCode}</div>
           </div>
-          <div style="display: flex; gap: 8px; justify-content: center; align-items: center; font-family: monospace; font-size: 8px; font-weight: 900; color: #000000; line-height: 1;">
-            <span>MRP: ₹${mrpVal.toFixed(0)}</span>
-            <span style="font-size: 9px; font-weight: 900; -webkit-text-stroke: 0.2px #000;">SP: ₹${product.selling_price.toFixed(0)}</span>
-          </div>
-          <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
-            ${miniBarcodeSvg}
-          </div>
-          <div style="font-family: monospace; font-size: 7.5px; font-weight: 900; letter-spacing: 0.15em; color: #000000; line-height: 1;">*${barcodeCode}*</div>
-        </div>
-      `.trim();
+        `.trim();
 
-      const sheetsList: string[] = [];
-      for (let s = 0; s < sheetCount; s++) {
-        sheetsList.push(
-          `<div class="label-sheet" style="width: 100mm; height: 25mm; max-height: 25mm; display: grid; grid-template-columns: 50mm 50mm; grid-template-rows: 25mm; box-sizing: border-box; background: #ffffff; color: #000000; overflow: hidden;"><div style="width: 50mm; height: 25mm; max-height: 25mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div><div style="width: 50mm; height: 25mm; max-height: 25mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div></div>`
-        );
+        const sheetsList: string[] = [];
+        for (let s = 0; s < sheetCount; s++) {
+          sheetsList.push(
+            `<div class="label-sheet" style="width: 102mm; height: 20mm; max-height: 20mm; display: grid; grid-template-columns: 34mm 34mm 34mm; grid-template-rows: 20mm; box-sizing: border-box; background: #ffffff; color: #000000; overflow: hidden;"><div style="width: 34mm; height: 20mm; max-height: 20mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div><div style="width: 34mm; height: 20mm; max-height: 20mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div><div style="width: 34mm; height: 20mm; max-height: 20mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div></div>`
+          );
+        }
+
+        printIsolatedLabels(sheetsList.join(""), 102, 20);
+      } else {
+        const miniBarcodeSvg = generateBarcodeSvg(barcodeCode, 18, "130px");
+
+        const singleMiniHtml = `
+          <div style="width: 50mm; height: 100%; max-height: 25mm; box-sizing: border-box; padding: 1mm 1.5mm; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; background: #ffffff; color: #000000; overflow: hidden; font-family: Arial, Helvetica, sans-serif;">
+            <div style="width: 100%; line-height: 1.1;">
+              <div style="font-size: 7.5px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #000000; -webkit-text-stroke: 0.15px #000;">PONMANI AGENCIES</div>
+              <div style="font-size: 8.5px; font-weight: 900; line-height: 1.1; max-width: 48mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #000000; margin-top: 1px; -webkit-text-stroke: 0.15px #000;">${product.name}</div>
+            </div>
+            <div style="width: 100%; display: flex; justify-content: center; align-items: baseline; gap: 10px; font-family: monospace; font-size: 8.5px; font-weight: 900; color: #000000; line-height: 1; -webkit-text-stroke: 0.15px #000;">
+              <span>MRP: ₹${mrpVal.toFixed(0)}</span>
+              <span>SP: ₹${product.selling_price.toFixed(0)}</span>
+            </div>
+            <div style="width: 100%; display: flex; justify-content: center; align-items: center;">
+              ${miniBarcodeSvg}
+            </div>
+            <div style="font-family: monospace; font-size: 7.5px; font-weight: 900; letter-spacing: 0.08em; color: #000000; line-height: 1;">${skuCode}</div>
+          </div>
+        `.trim();
+
+        const sheetsList: string[] = [];
+        for (let s = 0; s < sheetCount; s++) {
+          sheetsList.push(
+            `<div class="label-sheet" style="width: 100mm; height: 25mm; max-height: 25mm; display: grid; grid-template-columns: 50mm 50mm; grid-template-rows: 25mm; box-sizing: border-box; background: #ffffff; color: #000000; overflow: hidden;"><div style="width: 50mm; height: 25mm; max-height: 25mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div><div style="width: 50mm; height: 25mm; max-height: 25mm; box-sizing: border-box; overflow: hidden; display: flex;">${singleMiniHtml}</div></div>`
+          );
+        }
+
+        printIsolatedLabels(sheetsList.join(""), 100, 25);
       }
-
-      printIsolatedLabels(sheetsList.join(""), 100, 25);
     } finally {
       setTimeout(() => {
         setIsPrinting(false);
@@ -1276,7 +1345,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
         {/* Header */}
         <div className="flex justify-between items-center pb-2 border-b border-border">
           <div className="text-base font-bold text-foreground flex items-center gap-2">
-            <Barcode className="h-5 w-5 text-primary" /> Barcode Printer (4" × 1" Roll)
+            <Barcode className="h-5 w-5 text-primary" /> Barcode Sticker Printer
           </div>
           <button onClick={onClose} className="h-7 w-7 rounded-lg hover:bg-muted text-muted-foreground flex items-center justify-center">
             <X className="h-4 w-4" />
@@ -1288,6 +1357,8 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
           <div className="min-w-0 pr-2">
             <div className="text-xs font-bold text-foreground truncate">{product.name}</div>
             <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-2 mt-0.5">
+              <span>SKU: <strong className="text-foreground">{skuCode}</strong></span>
+              <span>•</span>
               <span>Barcode: <strong className="text-foreground">{barcodeCode}</strong></span>
               <span>•</span>
               <span>MRP: ₹{mrpVal.toFixed(0)}</span>
@@ -1297,31 +1368,95 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
           </div>
           <div className="shrink-0 text-right">
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-              2 Per Row (2" × 1")
+              {labelFormat === "34x20" ? "3 Per Row (34×20 mm)" : "2 Per Row (50×25 mm)"}
             </span>
           </div>
         </div>
 
-        {/* Visual Preview Frame (4" x 1" aspect ratio, 2 stickers side-by-side) */}
+        {/* Format Selector: 2 per row (50x25mm) vs 3 per row (34x20mm) */}
+        <div className="bg-secondary/50 p-2.5 rounded-lg border border-border space-y-1.5">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+            Select Label Size / Roll Format
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setLabelFormat("50x25")}
+              className={`p-2.5 rounded-lg border text-left transition flex items-center justify-between ${
+                labelFormat === "50x25"
+                  ? "bg-primary text-primary-foreground border-primary shadow"
+                  : "bg-background text-foreground border-border hover:bg-muted"
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold">2 Per Row (50 × 25 mm)</div>
+                <div className={`text-[10px] mt-0.5 ${labelFormat === "50x25" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  4" × 1" Roll (2-across)
+                </div>
+              </div>
+              <span className="font-mono text-xs font-extrabold px-1.5 py-0.5 rounded bg-black/20">
+                2/row
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setLabelFormat("34x20")}
+              className={`p-2.5 rounded-lg border text-left transition flex items-center justify-between ${
+                labelFormat === "34x20"
+                  ? "bg-primary text-primary-foreground border-primary shadow"
+                  : "bg-background text-foreground border-border hover:bg-muted"
+              }`}
+            >
+              <div>
+                <div className="text-xs font-bold">3 Per Row (34 × 20 mm)</div>
+                <div className={`text-[10px] mt-0.5 ${labelFormat === "34x20" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                  102mm × 20mm Roll (3-across)
+                </div>
+              </div>
+              <span className="font-mono text-xs font-extrabold px-1.5 py-0.5 rounded bg-black/20">
+                3/row
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Visual Preview Frame */}
         <div className="space-y-1.5">
           <div className="flex justify-between items-center text-[10px] text-muted-foreground font-mono">
-            <span>Roll Size: 4" × 1" (100mm × 25mm)</span>
+            <span>
+              {labelFormat === "34x20" ? 'Roll: 102mm × 20mm (~4" × 0.8")' : 'Roll: 100mm × 25mm (4" × 1")'}
+            </span>
             <span className="text-primary font-bold">
-              2 Stickers Side-by-Side (2" × 1" each)
+              {labelFormat === "34x20"
+                ? "3 Stickers Per Row (34mm × 20mm each)"
+                : "2 Stickers Per Row (50mm × 25mm each)"}
             </span>
           </div>
 
           <div className="bg-slate-200 dark:bg-zinc-800 p-3 rounded-lg border border-border flex justify-center">
-            <div className="w-[360px] h-[90px] bg-white rounded border-2 border-black shadow-md grid grid-cols-2 relative overflow-hidden">
-              {/* Left Sticker */}
-              <div className="border-r border-dashed border-gray-400 overflow-hidden">
-                {renderSingleMiniLabel()}
+            {labelFormat === "34x20" ? (
+              <div className="w-[360px] h-[72px] bg-white rounded border-2 border-black shadow-md grid grid-cols-3 relative overflow-hidden">
+                <div className="border-r border-dashed border-gray-400 overflow-hidden">
+                  {renderSingle34x20Label()}
+                </div>
+                <div className="border-r border-dashed border-gray-400 overflow-hidden">
+                  {renderSingle34x20Label()}
+                </div>
+                <div className="overflow-hidden">
+                  {renderSingle34x20Label()}
+                </div>
               </div>
-              {/* Right Sticker */}
-              <div className="overflow-hidden">
-                {renderSingleMiniLabel()}
+            ) : (
+              <div className="w-[360px] h-[90px] bg-white rounded border-2 border-black shadow-md grid grid-cols-2 relative overflow-hidden">
+                <div className="border-r border-dashed border-gray-400 overflow-hidden">
+                  {renderSingle50x25Label()}
+                </div>
+                <div className="overflow-hidden">
+                  {renderSingle50x25Label()}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -1354,7 +1489,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
                 className="w-16 text-center font-mono font-bold text-sm bg-transparent outline-none text-foreground"
               />
               <span className="text-xs text-muted-foreground font-medium">
-                {sheetCount === 1 ? "Row (2 pcs)" : "Rows (" + totalStickers + " pcs)"}
+                {sheetCount === 1 ? `Row (${stickersPerRow} pcs)` : `Rows (${totalStickers} pcs)`}
               </span>
             </div>
             <button
@@ -1380,7 +1515,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
                     : "bg-background text-muted-foreground border-border hover:text-foreground"
                 }`}
               >
-                {count * 2} pcs ({count}r)
+                {count * stickersPerRow} pcs ({count}r)
               </button>
             ))}
           </div>
@@ -1389,7 +1524,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
         {/* Modal Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <div className="text-[11px] text-muted-foreground font-mono">
-            Print target: <strong className="text-foreground">TVS LP 46 NEO / 4"×1" Thermal</strong>
+            Target: <strong className="text-foreground">{labelFormat === "34x20" ? '34×20 mm (3/row)' : '50×25 mm (2/row)'}</strong>
           </div>
           <div className="flex gap-2">
             <button
@@ -1414,7 +1549,7 @@ function BarcodePrintModal({ product, onClose }: { product: InventoryItem; onClo
   );
 }
 
-function BarcodeVisual({ code, height = 22 }: { code: string; height?: number }) {
+function BarcodeVisual({ code, height = 22, maxW = "160px" }: { code: string; height?: number; maxW?: string }) {
   const clean = code.toUpperCase();
   const bars: boolean[] = [];
   for (let i = 0; i < clean.length; i++) {
@@ -1423,7 +1558,7 @@ function BarcodeVisual({ code, height = 22 }: { code: string; height?: number })
   }
 
   return (
-    <svg className="w-full" style={{ height: `${height}px`, maxWidth: "160px" }} viewBox="0 0 160 30" preserveAspectRatio="none">
+    <svg className="w-full" style={{ height: `${height}px`, maxWidth: maxW }} viewBox="0 0 160 30" preserveAspectRatio="none">
       <rect width="160" height="30" fill="white" />
       {bars.map((b, idx) =>
         b ? (
